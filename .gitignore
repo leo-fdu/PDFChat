@@ -1,0 +1,13 @@
+# Build artifacts
+.build/
+PDFChat.app
+*.xcodeproj
+*.xcworkspace
+
+# macOS
+.DS_Store
+*.swp
+
+# SwiftPM
+.swiftpm/
+Package.resolved
