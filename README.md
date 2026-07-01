@@ -1,90 +1,99 @@
 # PDFChat
 
-一个为 macOS 设计的 PDF 阅读器，内置 LLM 侧边栏，接入任意 OpenAI 兼容接口即可边读边问。
+A PDF reader designed for macOS, featuring a built-in LLM sidebar. Connect any OpenAI-compatible API endpoint and ask questions while reading.
 
-## 功能特性
+## Features
 
-- **设为系统默认 PDF 打开方式**：双击任意 PDF 直接在 PDFChat 中打开并提问
-- **LLM 侧边栏**：OpenAI 兼容端点（baseURL + apiKey + model），SSE 流式输出，可随时停止生成
-- **上下文自动注入**
-  - 默认把整篇 PDF 作为上下文
-  - 选中一段文字后自动切换为「选区」上下文，顶部状态条显示来源与 token 估算，一键重置回全文
-- **多模态图片输入**：输入框支持剪贴板粘贴（⌘V）、文件选择；只要接入的模型支持 vision 即可看图
-- **预制提示词（Slash Commands）**：行首输入 `/` 弹出补全下拉，内置 总结/翻译/解释/提取/改写，可在设置页增删改
-- **快捷键**
+* **Set as the system default PDF opener**: Double-click any PDF to open it directly in PDFChat and start asking questions.
 
-  | 快捷键 | 功能 |
-  |---|---|
-  | Enter | 发送消息 |
-  | Shift+Enter | 换行 |
-  | ⌘N | 新对话 |
-  | ⌘O | 打开 PDF |
-  | ⌘, | 设置 |
+* **LLM sidebar**: Supports OpenAI-compatible endpoints (`baseURL` + `apiKey` + `model`), SSE streaming output, and stopping generation at any time.
 
-- **Token 与费用统计**：解析每次响应的 `usage`，消息气泡下显示 prompt/completion tokens 与费用；侧边栏底部实时累加当前会话总量
-- **超限预警**：接近模型上下文上限时输入框边框变橙
-- **API Key 安全存储**：写入 macOS Keychain，不明文落盘
+* **Automatic context injection**
 
-## 系统要求
+  * Uses the entire PDF as context by default.
+  * After selecting a text passage, it automatically switches to “selection” context. The top status bar shows the context source and estimated token count, with one-click reset back to full-document context.
 
-- macOS 14.0（Sonoma）或更高
-- Apple Silicon（已验证）；Intel Mac 需自行从源码编译
+* **Multimodal image input**: The input box supports pasting images from the clipboard (`⌘V`) and selecting image files. Image understanding works as long as the connected model supports vision.
 
-## 快速开始
+* **Preset prompts / Slash Commands**: Type `/` at the beginning of a line to open an autocomplete dropdown. Built-in commands include summarize, translate, explain, extract, and rewrite. You can add, delete, or edit commands in the settings page.
 
-### 方式一：直接使用预编译版
+* **Keyboard shortcuts**
 
-1. 将 `PDFChat.app` 拖入 `/Applications`
-2. 首次双击若提示「无法验证开发者」：右键点击图标 → 打开 → 打开（一次性放行即可）
-3. 打开后按 ⌘, 进入设置：
-   - 选择服务商预设（OpenAI / DeepSeek / Moonshot / 智谱 / SiliconFlow）自动填充 baseURL，或手动填写
-   - 填入对应 API Key（存入 Keychain）
-   - 确认模型列表与当前模型
-   - （可选）在「价格」标签页为每个模型填输入/输出单价（$/1M tokens），用于费用统计
-4. 设为默认 PDF 打开方式：在 Finder 选中任意 PDF → 显示简介 → 打开方式 → 选 PDFChat → 「全部更改」
+  | Shortcut    | Function         |
+  | ----------- | ---------------- |
+  | Enter       | Send message     |
+  | Shift+Enter | New line         |
+  | ⌘N          | New conversation |
+  | ⌘O          | Open PDF         |
+  | ⌘,          | Settings         |
 
-### 方式二：从源码构建
+* **Token and cost statistics**: Parses the `usage` field from each response. Prompt tokens, completion tokens, and cost are displayed below each message bubble. The bottom of the sidebar shows the real-time accumulated total for the current session.
+
+* **Context limit warning**: When approaching the model’s context limit, the input box border turns orange.
+
+* **Secure API key storage**: API keys are stored in macOS Keychain and are never written to disk in plaintext.
+
+## System Requirements
+
+* macOS 14.0 Sonoma or later
+* Apple Silicon verified; Intel Macs need to build from source manually
+
+## Quick Start
+
+### Option 1: Use the Prebuilt Version
+
+1. Drag `PDFChat.app` into `/Applications`.
+2. On first launch, if macOS shows “cannot verify the developer,” right-click the app icon → Open → Open. This only needs to be done once.
+3. After opening the app, press `⌘,` to enter Settings:
+
+   * Choose a provider preset. OpenAI, DeepSeek, Moonshot, Zhipu, and SiliconFlow are supported for automatic `baseURL` filling, or you can enter it manually.
+   * Enter the corresponding API key. It will be stored in Keychain.
+   * Confirm the model list and the currently selected model.
+   * Optional: In the “Pricing” tab, enter the input/output price for each model in dollars per 1M tokens. This is used for cost statistics.
+4. Set PDFChat as the default PDF opener: in Finder, select any PDF → Get Info → Open with → choose PDFChat → Change All.
+
+### Option 2: Build from Source
 
 ```sh
 git clone https://github.com/leo-fdu/PDFChat.git
 cd PDFChat
-./build_app.sh        # 产出 PDFChat.app
+./build_app.sh        # Outputs PDFChat.app
 open PDFChat.app
 ```
 
-需要 Xcode Command Line Tools 与 Swift 5.9+。
+Xcode Command Line Tools and Swift 5.9+ are required.
 
-## 使用提示
+## Usage Tips
 
-- 选中 PDF 中的文字后，侧边栏顶部会自动显示「选区」标签，此时提问只针对该段；点重置按钮回到全文
-- 粘贴 API Key 时注意去除首尾空白，否则可能 401
-- 切换服务商预设后请重新填写对应的 API Key
-- Token 统计仅当前会话累计，新对话（⌘N）会清零
+* After selecting text in a PDF, the top of the sidebar will automatically show the “Selection” label. Questions will then be answered only based on that selected passage. Click the reset button to switch back to full-document context.
+* When pasting an API key, make sure to remove leading and trailing spaces; otherwise, you may get a 401 error.
+* After switching provider presets, re-enter the corresponding API key.
+* Token statistics are accumulated only for the current session. Starting a new conversation with `⌘N` will reset the count.
 
-## 项目结构
+## Project Structure
 
-```
+```text
 PDFChat/
 ├── Sources/PDFChat/
-│   ├── PDFChatApp.swift        # 入口 + onOpenURL + 快捷键
-│   ├── ContentView.swift      # 主窗口
-│   ├── PDF/                    # PDFKit 渲染 + 上下文管理
-│   ├── Chat/                   # 侧边栏、消息、输入框、View Model
-│   ├── API/                    # 配置、Keychain、OpenAI 兼容客户端
-│   ├── Settings/               # 设置、预制提示词、价格
-│   └── Utils/                  # Token 估算、图片编码
+│   ├── PDFChatApp.swift        # Entry point + onOpenURL + shortcuts
+│   ├── ContentView.swift       # Main window
+│   ├── PDF/                    # PDFKit rendering + context management
+│   ├── Chat/                   # Sidebar, messages, input box, ViewModel
+│   ├── API/                    # Configuration, Keychain, OpenAI-compatible client
+│   ├── Settings/               # Settings, preset prompts, pricing
+│   └── Utils/                  # Token estimation, image encoding
 ├── Package.swift
 ├── Info.plist
 └── build_app.sh
 ```
 
-## 隐私
+## Privacy
 
-- API Key 存于 macOS Keychain，不明写文件
-- 其余配置（baseURL、模型、价格、预制提示词）存于 `~/Library/Preferences/com.niqi.pdfchat.plist`
-- 对话历史不持久化，关闭即丢失
-- 不收集任何遥测，不上传任何数据到第三方（仅你配置的 API 端点会收到你的提问与 PDF 上下文）
+* API keys are stored in macOS Keychain and are not written to files in plaintext.
+* Other configuration data, including `baseURL`, model, pricing, and preset prompts, is stored at `~/Library/Preferences/com.niqi.pdfchat.plist`.
+* Conversation history is not persisted and is discarded when the app is closed.
+* No telemetry is collected, and no data is uploaded to third parties. Only the API endpoint you configure will receive your questions and PDF context.
 
-## 许可证
+## License
 
 [MIT](LICENSE)
