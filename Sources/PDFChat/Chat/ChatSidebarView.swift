@@ -14,8 +14,6 @@ struct ChatSidebarView: View {
                     ForEach(settings.config.models, id: \.self) { m in
                         Button(m) { viewModel.switchModel(m) }
                     }
-                    Divider()
-                    Button("管理模型与价格…") { openSettings() }
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -89,9 +87,5 @@ struct ChatSidebarView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Color.secondary.opacity(0.08))
-    }
-
-    private func openSettings() {
-        AppActions.openSettings()
     }
 }

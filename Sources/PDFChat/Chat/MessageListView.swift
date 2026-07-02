@@ -34,7 +34,7 @@ struct MessageListView: View {
                 .foregroundColor(.secondary)
             Text("就 PDF 内容提问吧")
                 .font(.headline)
-            Text("选中文本自动作为上下文；输入 / 触发预制提示词")
+            Text("选中文本自动作为上下文；输入 / 触发预置提示词")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

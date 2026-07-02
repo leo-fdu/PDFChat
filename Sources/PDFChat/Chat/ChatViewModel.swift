@@ -152,9 +152,12 @@ final class ChatViewModel: ObservableObject {
 
     private static func buildSystemPrompt(contextText: String) -> String {
         let trimmed = contextText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preamble = """
+        你是一个 PDF 阅读助手，工作在 macOS 应用中，目标是为用户在阅读 PDF 时提供帮助。你的回答须基于事实、力求客观准确。不要刻意迎合用户，也不要刻意反驳用户；遇到不确定或上下文未覆盖之处，请如实说明，而非臆测或编造。
+        """
         if trimmed.isEmpty {
-            return "你是阅读助手。用户可能就一份 PDF 向你提问，暂无可用上下文，请基于常识作答。"
+            return preamble + "用户可能就一份 PDF 向你提问，当前暂无可用上下文，请基于常识作答并明确提示缺乏来源依据。"
         }
-        return "你是阅读助手。以下是用户当前关注的上下文（PDF 全文或选区），请基于它回答问题：\n\n" + trimmed + "\n\n若上下文未覆盖该问题，请如实说明。"
+        return preamble + "以下是用户当前关注的上下文（PDF 全文或选区），请基于它回答问题：\n\n" + trimmed + "\n\n若上下文未覆盖该问题，请如实说明。"
     }
 }

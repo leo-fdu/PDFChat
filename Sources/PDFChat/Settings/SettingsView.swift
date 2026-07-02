@@ -9,7 +9,7 @@ struct SettingsView: View {
         TabView {
             apiTab.tabItem { Label("API", systemImage: "key") }
             pricingTab.tabItem { Label("价格", systemImage: "dollarsign.circle") }
-            presetsTab.tabItem { Label("预制提示词", systemImage: "text.bubble") }
+            presetsTab.tabItem { Label("预置提示词", systemImage: "text.bubble") }
         }
         .frame(width: 520, height: 420)
         .onAppear {

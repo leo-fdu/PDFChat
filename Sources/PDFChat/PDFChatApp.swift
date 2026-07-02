@@ -1,50 +1,54 @@
 import SwiftUI
-import UniformTypeIdentifiers
+
+// MARK: - Focused values（用于菜单命令定位当前活跃窗口）
+private struct ChatViewModelKey: FocusedValueKey { typealias Value = ChatViewModel }
+private struct OpenFilePickerKey: FocusedValueKey { typealias Value = () -> Void }
+
+extension FocusedValues {
+    var pdfChatViewModel: ChatViewModel? {
+        get { self[ChatViewModelKey.self] }
+        set { self[ChatViewModelKey.self] = newValue }
+    }
+    var pdfChatOpenPicker: (() -> Void)? {
+        get { self[OpenFilePickerKey.self] }
+        set { self[OpenFilePickerKey.self] = newValue }
+    }
+}
 
 @main
 struct PDFChatApp: App {
-    @StateObject private var contextStore = PDFContextStore()
-    @StateObject private var chatViewModel = ChatViewModel()
+    @FocusedValue(\.pdfChatViewModel) private var chatVM: ChatViewModel?
+    @FocusedValue(\.pdfChatOpenPicker) private var openPicker: (() -> Void)?
 
     var body: some Scene {
-        WindowGroup("PDFChat") {
-            ContentView()
-                .environmentObject(contextStore)
-                .environmentObject(chatViewModel)
-                .onOpenURL { url in
-                    if url.pathExtension.lowercased() == "pdf" {
-                        contextStore.load(url: url)
-                    }
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .openPDFFromMenu)) { _ in
-                    NotificationCenter.default.post(name: .openFilePicker, object: nil)
-                }
+        // 文档驱动的多窗口场景：Finder 双击 PDF / 拖入 / 应用内打开
+        // 都会通过 SwiftUI 的文档架构为每个 PDF 创建独立窗口。
+        DocumentGroup(viewing: PDFFileDocument.self) { file in
+            ContentView(pdfDoc: file.$document.pdfDocument)
         }
-        .commands {
-            // 覆盖 New：⌘N 新对话
-            CommandGroup(replacing: .newItem) {
-                Button("新对话") { chatViewModel.newConversation() }
-                    .keyboardShortcut("n", modifiers: .command)
-                Button("打开 PDF…") {
-                    NotificationCenter.default.post(name: .openPDFFromMenu, object: nil)
-                }
-                    .keyboardShortcut("o", modifiers: .command)
-            }
+        .commands { appCommands }
+
+        // 兜底欢迎窗口：Dock 启动（无文档）时显示一个空白窗口。
+        // 顺序关键：放在 DocumentGroup 之后，文档冷启动仍优先路由到上面的文档场景。
+        WindowGroup("PDFChat") {
+            ContentView(pdfDoc: .constant(nil))
         }
 
         Settings {
             SettingsView()
         }
     }
-}
 
-extension Notification.Name {
-    static let openPDFFromMenu = Notification.Name("openPDFFromMenu")
-    static let openFilePicker = Notification.Name("openFilePicker")
-}
+    @CommandsBuilder
+    private var appCommands: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("新对话") { chatVM?.newConversation() }
+                .keyboardShortcut("n", modifiers: .command)
+                .disabled(chatVM == nil)
 
-enum AppActions {
-    static func openSettings() {
-        NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            Button("打开 PDF…") { openPicker?() }
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(openPicker == nil)
+        }
     }
 }

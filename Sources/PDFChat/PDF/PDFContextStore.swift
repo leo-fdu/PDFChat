@@ -59,6 +59,14 @@ final class PDFContextStore: ObservableObject {
         }
     }
 
+    func load(document: PDFDocument, url: URL? = nil) {
+        self.pdfURL = url
+        self.document = document
+        self.fullTextCache = ""
+        self.selectedText = ""
+        self.contextMode = .fullDocument
+    }
+
     func updateSelection(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         selectedText = trimmed
