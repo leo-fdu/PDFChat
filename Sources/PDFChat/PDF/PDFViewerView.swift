@@ -68,7 +68,15 @@ final class ZoomablePDFView: PDFView {
 
     override func magnify(with event: NSEvent) {
         super.magnify(with: event)
-        clampAndNotify()
+        // 延迟到下一 runloop 再读取 scaleFactor：捏合期间同步读到的值尚未提交，
+        // 会导致 onScaleChange 上报旧值（与 smartMagnify 的处理保持一致）。
+        DispatchQueue.main.async { [weak self] in self?.clampAndNotify() }
+    }
+
+    override func endGesture(with event: NSEvent) {
+        super.endGesture(with: event)
+        // 手势结束时再补一次，确保捕获 PDFKit 最终提交的缩放值。
+        DispatchQueue.main.async { [weak self] in self?.clampAndNotify() }
     }
 
     override func smartMagnify(with event: NSEvent) {
@@ -123,11 +131,17 @@ struct PDFViewRepresentable: NSViewRepresentable {
                     fitScale = fit
                     nsView.scaleFactor = fit
                     zoom = fit
+                    context.coordinator.lastAppliedZoom = fit
                 }
             }
         } else {
-            if abs(nsView.scaleFactor - zoom) > 0.001 {
+            // 仅当 zoom 被 app 主动改动（按钮 / 重置）时才把缩放推给 view。
+            // 这样选中文本等无关重渲染不会用陈旧的 zoom 覆盖 view 的真实缩放，
+            // 彻底避免「捏合后选中文本跳回原大小」的问题。
+            if context.coordinator.lastAppliedZoom != zoom,
+               abs(nsView.scaleFactor - zoom) > 0.001 {
                 nsView.scaleFactor = zoom
+                context.coordinator.lastAppliedZoom = zoom
             }
         }
     }
@@ -137,6 +151,9 @@ struct PDFViewRepresentable: NSViewRepresentable {
     final class Coordinator: NSObject {
         weak var pdfView: ZoomablePDFView?
         weak var store: PDFContextStore?
+        // 记录最后一次由 app 主动推送给 view 的 zoom 值，用于判断 updateNSView
+        // 是否需要再次写 scaleFactor（见 PDFViewRepresentable.updateNSView）。
+        var lastAppliedZoom: CGFloat?
 
         @objc func selectionChanged(_ note: Notification) {
             guard let pv = pdfView else { return }

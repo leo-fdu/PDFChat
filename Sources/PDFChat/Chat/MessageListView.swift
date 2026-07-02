@@ -70,12 +70,21 @@ struct MessageBubble: View {
                     }
                 }
                 if !message.text.isEmpty {
-                    Text(message.text)
-                        .textSelection(.enabled)
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(isUser ? Color.accentColor.opacity(0.18) : Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(10)
-                        .frame(maxWidth: 320, alignment: isUser ? .trailing : .leading)
+                    if isUser {
+                        Text(message.text)
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(isUser ? Color.accentColor.opacity(0.18) : Color(NSColor.controlBackgroundColor))
+                            .cornerRadius(10)
+                            .frame(maxWidth: 320, alignment: isUser ? .trailing : .leading)
+                    } else {
+                        MarkdownView(text: message.text)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Color(NSColor.controlBackgroundColor))
+                            .cornerRadius(10)
+                            .frame(maxWidth: 360, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
                 }
                 if let usage = message.usage {
                     metaLabel(usage: usage, cost: message.costUSD)
