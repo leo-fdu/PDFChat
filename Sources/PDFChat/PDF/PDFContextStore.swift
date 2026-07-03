@@ -15,6 +15,8 @@ final class PDFContextStore: ObservableObject {
 
     @Published var selectedText: String = ""
     @Published var contextMode: ContextMode = .fullDocument
+    /// 是否有未保存到磁盘的高亮更改（高亮 / 撤销后置 true，写盘成功后置 false）。
+    @Published var hasUnsavedChanges: Bool = false
 
     private var fullTextCache: String = ""
 
@@ -56,6 +58,7 @@ final class PDFContextStore: ObservableObject {
             self.fullTextCache = ""
             self.selectedText = ""
             self.contextMode = .fullDocument
+            self.hasUnsavedChanges = false
         }
     }
 
@@ -65,6 +68,7 @@ final class PDFContextStore: ObservableObject {
         self.fullTextCache = ""
         self.selectedText = ""
         self.contextMode = .fullDocument
+        self.hasUnsavedChanges = false
     }
 
     func updateSelection(_ text: String) {

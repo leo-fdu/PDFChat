@@ -10,6 +10,7 @@ A macOS PDF reader with a built-in LLM sidebar — point it at any OpenAI-compat
   - By default, the entire PDF is used as context
   - Select text and it switches to "selection" context; the status bar shows the source with a token estimate, one click to reset back to full document
 - **Multimodal image input**: paste from clipboard (⌘V) or pick a file; works with any model that supports vision
+- **Text highlighting**: select text in the PDF and click the "高亮" button in the popup to highlight it with a vivid fluorescent yellow; ⌘Z undoes the last highlight action; on window close you're asked whether to save the highlights back to the original PDF file
 - **Preset prompts (slash commands)**: type `/` at the start of a line for autocomplete; ships with 总结 / 翻译 / 解释 / 提取 / 改写; add, edit and delete in Settings
 - **Keyboard shortcuts**
 

@@ -7,11 +7,14 @@ struct ContentView: View {
     @StateObject private var chatViewModel = ChatViewModel()
     @State private var sidebarVisible: Bool = true
     @State private var showOpenSheet = false
+    @State private var undoHighlight: (() -> Void)?
 
     let pdfDocBinding: Binding<PDFDocument?>
+    let fileURL: URL?
 
-    init(pdfDoc: Binding<PDFDocument?>) {
-        pdfDocBinding = pdfDoc
+    init(pdfDoc: Binding<PDFDocument?>, fileURL: URL? = nil) {
+        self.pdfDocBinding = pdfDoc
+        self.fileURL = fileURL
     }
 
     var body: some View {
@@ -60,17 +63,18 @@ struct ContentView: View {
         }
         .focusedSceneValue(\.pdfChatViewModel, chatViewModel)
         .focusedSceneValue(\.pdfChatOpenPicker) { showOpenSheet = true }
+        .focusedSceneValue(\.pdfChatUndoHighlight, undoHighlight)
     }
 
     private func loadIfNeeded() {
         guard let doc = pdfDocBinding.wrappedValue, contextStore.document == nil else { return }
-        contextStore.load(document: doc)
+        contextStore.load(document: doc, url: fileURL)
     }
 
     private var pdfPane: some View {
         Group {
             if contextStore.document != nil {
-                PDFViewerView(store: contextStore)
+                PDFViewerView(store: contextStore, undoHandler: $undoHighlight)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.richtext")
