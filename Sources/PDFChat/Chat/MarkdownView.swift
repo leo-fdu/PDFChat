@@ -38,8 +38,19 @@ struct MarkdownWebView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
-        context.coordinator.heightBinding = { value in
-            DispatchQueue.main.async { self.height = value }
+        context.coordinator.heightBinding = { [weak nsView] value in
+            DispatchQueue.main.async {
+                // live resize（拖窗口/最大化动画）期间延迟应用高度：
+                // 此时每帧都在整窗重排，若再改 frame 会让 LazyVStack 层层级联重排，掉帧严重。
+                if let nsView, let window = nsView.window, window.inLiveResize {
+                    context.coordinator.queueHeight(value)
+                    return
+                }
+                // 禁用隐式动画：高度变化若参与动画会反复触发布局，造成流式输出掉帧
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) { self.height = value }
+            }
         }
         // 仅当文本变化时才重渲染，避免 height→frame→updateNSView 的循环
         if context.coordinator.lastText != text {
@@ -122,8 +133,12 @@ struct MarkdownWebView: NSViewRepresentable {
     <script>
       marked.setOptions({ gfm: true, breaks: true });
 
+      var lastPostedHeight = -1;
       function postHeight() {
         var h = document.body.scrollHeight;
+        // 高度没变就不回报，避免 resize 期间每个观察回调都跨进程发消息
+        if (h === lastPostedHeight) return;
+        lastPostedHeight = h;
         try { window.webkit.messageHandlers.height.postMessage(String(h)); } catch (e) {}
       }
 
@@ -185,6 +200,33 @@ extension MarkdownWebView {
         var lastText: String?
         private var lastRender: Date = .distantPast
         private var pending: DispatchWorkItem?
+
+        /// live resize 期间暂缓的高度值（每帧只保留最新一个）。
+        private var pendingHeight: CGFloat?
+        private var endResizeObserver: NSObjectProtocol?
+
+        func queueHeight(_ h: CGFloat) {
+            pendingHeight = h
+            guard endResizeObserver == nil else { return }
+            endResizeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didEndLiveResizeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.flushQueuedHeight()
+                }
+            }
+        }
+
+        private func flushQueuedHeight() {
+            if let o = endResizeObserver {
+                NotificationCenter.default.removeObserver(o)
+                endResizeObserver = nil
+            }
+            guard let h = pendingHeight else { return }
+            pendingHeight = nil
+            heightBinding?(h)
+        }
 
         func requestRender(text: String, in webView: WKWebView) {
             self.webView = webView

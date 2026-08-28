@@ -70,6 +70,9 @@ struct PDFChatApp: App {
 /// 任一窗口选择「取消」则中止退出；保存失败也中止退出。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 退出路径不经过 windowShouldClose，这里统一清除 NSDocument 编辑标记，
+        // 避免系统对 viewing-only 文档尝试 autosave 失败而弹「不支持该操作」。
+        DocumentEditStateCleaner.clearAll()
         let dirty = sender.windows.compactMap { ($0.delegate as? WindowCloseDelegate)?.store }
             .filter { $0.hasUnsavedChanges }
         if dirty.isEmpty { return .terminateNow }

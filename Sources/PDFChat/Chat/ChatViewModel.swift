@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 struct ChatMessage: Identifiable {
-    let id = UUID()
+    var id: UUID = UUID()
     let role: String           // "user" | "assistant" | "system"(unused display)
     var text: String
     var images: [ChatImage]
@@ -27,6 +27,13 @@ final class ChatViewModel: ObservableObject {
 
     private var streamTask: Task<Void, Never>?
 
+    /// 对话历史持久化；由 ContentView 在 PDF 加载时注入。
+    var history: ConversationHistoryStore?
+
+    // 流式增量缓冲：每 120ms 合并刷新一次，降低高频发布导致的掉帧
+    private var pendingDeltas: [UUID: String] = [:]
+    private var flushScheduled = false
+
     let settings = AppSettings.shared
 
     init() {
@@ -37,6 +44,7 @@ final class ChatViewModel: ObservableObject {
 
     func newConversation() {
         streamTask?.cancel()
+        history?.beginNewConversation()
         messages = []
         inputText = ""
         pendingImages = []
@@ -45,6 +53,47 @@ final class ChatViewModel: ObservableObject {
         sessionPromptTokens = 0
         sessionCompletionTokens = 0
         sessionCost = 0
+    }
+
+    /// 从历史记录恢复一段对话（会保持其 id，便于后续保存更新同一条目）。
+    func restore(messages restored: [ChatMessage]) {
+        streamTask?.cancel()
+        pendingDeltas.removeAll()
+        flushScheduled = false
+        messages = restored
+        inputText = ""
+        pendingImages = []
+        isStreaming = false
+        error = nil
+        sessionPromptTokens = 0
+        sessionCompletionTokens = 0
+        sessionCost = 0
+    }
+
+    /// 把当前消息同步到持久化历史（过滤掉尚未收到任何内容的流式占位）。
+    private func syncHistory() {
+        history?.saveCurrent(messages: messages)
+    }
+
+    /// 缓冲流式增量，按固定间隔合并写入，避免每个 token 都触发整表刷新。
+    private func bufferDelta(_ delta: String, assistantId: UUID) {
+        pendingDeltas[assistantId, default: ""] += delta
+        guard !flushScheduled else { return }
+        flushScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard let self else { return }
+            self.flushScheduled = false
+            var appendedAfterStop = false
+            for (id, text) in self.pendingDeltas {
+                if let idx = self.messages.firstIndex(where: { $0.id == id }) {
+                    self.messages[idx].text += text
+                    if !self.messages[idx].streaming { appendedAfterStop = true }
+                }
+            }
+            self.pendingDeltas.removeAll()
+            if appendedAfterStop { self.syncHistory() }
+        }
     }
 
     func switchModel(_ model: String) {
@@ -78,6 +127,7 @@ final class ChatViewModel: ObservableObject {
         let assistant = ChatMessage(role: "assistant", text: "", images: [], usage: nil, costUSD: nil, streaming: true)
         let assistantId = assistant.id
         messages.append(assistant)
+        syncHistory()
 
         let systemPrompt = Self.buildSystemPrompt(contextText: contextStore.contextText)
 
@@ -91,14 +141,12 @@ final class ChatViewModel: ObservableObject {
         let cfg = settings.config
         let key = settings.apiKey
         let model = currentModel
-        let client = OpenAIClient(baseURL: cfg.baseURL, apiKey: key, model: model)
+        let client = OpenAIClient(baseURL: cfg.baseURL, apiKey: key, model: model, reasoningEffort: cfg.reasoningEffort)
         let price = settings.price(for: model)
 
         let onDelta: (String) -> Void = { [weak self] delta in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard let idx = self.messages.firstIndex(where: { $0.id == assistantId }) else { return }
-                self.messages[idx].text += delta
+            Task { @MainActor in
+                self?.bufferDelta(delta, assistantId: assistantId)
             }
         }
         let onUsage: (ChatUsage) -> Void = { [weak self] usage in
@@ -112,6 +160,7 @@ final class ChatViewModel: ObservableObject {
                 self.sessionPromptTokens += usage.promptTokens
                 self.sessionCompletionTokens += usage.completionTokens
                 self.sessionCost += cost
+                self.syncHistory()
             }
         }
 
@@ -127,6 +176,7 @@ final class ChatViewModel: ObservableObject {
                     if let idx = self?.messages.firstIndex(where: { $0.id == assistantId }) {
                         self?.messages[idx].streaming = false
                     }
+                    self?.syncHistory()
                 }
             } catch {
                 await MainActor.run {
@@ -138,6 +188,7 @@ final class ChatViewModel: ObservableObject {
                         }
                     }
                     self.error = error.localizedDescription
+                    self.syncHistory()
                 }
             }
             await MainActor.run { self?.isStreaming = false }
@@ -148,6 +199,7 @@ final class ChatViewModel: ObservableObject {
         streamTask?.cancel()
         isStreaming = false
         for i in messages.indices where messages[i].streaming { messages[i].streaming = false }
+        syncHistory()
     }
 
     private static func buildSystemPrompt(contextText: String) -> String {

@@ -16,7 +16,15 @@ final class PDFContextStore: ObservableObject {
     @Published var selectedText: String = ""
     @Published var contextMode: ContextMode = .fullDocument
     /// 是否有未保存到磁盘的高亮更改（高亮 / 撤销后置 true，写盘成功后置 false）。
-    @Published var hasUnsavedChanges: Bool = false
+    @Published var hasUnsavedChanges: Bool = false {
+        didSet {
+            // 标记为脏的同时清除底层 NSDocument 的编辑标记：
+            // 该文档 viewing-only 不支持 autosave，否则系统会尝试自动保存并失败弹窗。
+            if hasUnsavedChanges {
+                DocumentEditStateCleaner.clear(window: nil, url: pdfURL)
+            }
+        }
+    }
 
     private var fullTextCache: String = ""
 

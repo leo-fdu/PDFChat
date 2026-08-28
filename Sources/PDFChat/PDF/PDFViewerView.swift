@@ -92,6 +92,12 @@ final class ZoomablePDFView: PDFView {
     /// 用户确认高亮：把当前选区转为高亮并标记未保存。
     var onHighlightRequested: (() -> Void)?
 
+    /// 私有 undoManager：阻断 PDFKit 注解撤销沿响应链传播到 NSDocument 的撤销管理器，
+    /// 避免把 viewing-only 文档标记为已编辑。高亮撤销由应用自管（Coordinator.undoStack）。
+    private let isolatedUndoManager = UndoManager()
+
+    override var undoManager: UndoManager? { isolatedUndoManager }
+
     private let highlightPopover: NSPopover = {
         let p = NSPopover()
         p.behavior = .transient
@@ -297,6 +303,31 @@ struct PDFViewRepresentable: NSViewRepresentable {
     }
 }
 
+/// 清除 NSDocument 的「已编辑」标记。
+/// SwiftUI `DocumentGroup(viewing:)` 的文档不支持写入（fileWrapper 抛 featureUnsupported），
+/// 一旦被标记为已编辑，关闭窗口 / 退出应用时系统会尝试 autosave 并失败，
+/// 弹出「无法自动存储……不支持该操作」。而 PDFKit 注解操作（经共享 undoManager）
+/// 和 HighlightService 写回原文件都可能造成该标记，故在关键时机显式清除。
+@MainActor
+enum DocumentEditStateCleaner {
+    static func clearAll() {
+        for doc in NSDocumentController.shared.documents {
+            doc.updateChangeCount(.changeCleared)
+        }
+    }
+
+    static func clear(window: NSWindow?, url: URL?) {
+        for doc in NSDocumentController.shared.documents {
+            let matchesWindow = doc.windowControllers.contains { $0.window === window }
+            let matchesURL = url != nil &&
+                (doc.fileURL == url || doc.fileURL?.resolvingSymlinksInPath() == url)
+            if matchesWindow || matchesURL {
+                doc.updateChangeCount(.changeCleared)
+            }
+        }
+    }
+}
+
 /// 拦截窗口关闭：若有未保存的高亮，弹窗询问「保存 / 不保存 / 取消」。
 /// 对 windowShouldClose 以外的消息转发给 SwiftUI 原始 delegate，不破坏窗口生命周期。
 final class WindowCloseDelegate: NSObject, NSWindowDelegate {
@@ -309,6 +340,8 @@ final class WindowCloseDelegate: NSObject, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // 关闭前清除 NSDocument 编辑标记，避免系统对 viewing-only 文档尝试 autosave 失败弹窗。
+        DocumentEditStateCleaner.clear(window: sender, url: store?.pdfURL)
         guard let store, store.hasUnsavedChanges else { return true }
         let alert = NSAlert()
         alert.messageText = "是否保存对该 PDF 的高亮更改？"

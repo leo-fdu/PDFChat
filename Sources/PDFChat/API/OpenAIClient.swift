@@ -32,11 +32,14 @@ final class OpenAIClient {
     let baseURL: String
     let apiKey: String
     let model: String
+    /// 推理强度；nil 时不发送 reasoning_effort。
+    let reasoningEffort: String?
 
-    init(baseURL: String, apiKey: String, model: String) {
+    init(baseURL: String, apiKey: String, model: String, reasoningEffort: String? = nil) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.model = model
+        self.reasoningEffort = reasoningEffort
     }
 
     /// 构造请求体。
@@ -46,6 +49,9 @@ final class OpenAIClient {
             "messages": messages,
             "stream": stream
         ]
+        if let effort = reasoningEffort, !effort.isEmpty {
+            body["reasoning_effort"] = effort
+        }
         if stream {
             body["stream_options"] = ["include_usage": true]
         }

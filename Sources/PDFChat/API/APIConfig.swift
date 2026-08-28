@@ -28,6 +28,8 @@ struct APIConfig: Codable, Equatable {
     var pricing: [String: ModelPrice]
     /// 每个模型的最大上下文 token 数（用于超限预警）。
     var maxContexts: [String: Int]
+    /// 推理强度（reasoning_effort）；nil 表示不发送该参数，由服务端取默认值。
+    var reasoningEffort: String?
 
     static func == (lhs: APIConfig, rhs: APIConfig) -> Bool {
         lhs.baseURL == rhs.baseURL && lhs.model == rhs.model && lhs.models == rhs.models
@@ -51,8 +53,35 @@ extension APIConfig {
         maxContexts: [
             "deepseek-chat": 65536,
             "deepseek-reasoner": 65536
-        ]
+        ],
+        reasoningEffort: "high"
     )
+}
+
+/// 推理强度档位（对应 OpenAI 兼容的 reasoning_effort 参数）。
+enum ReasoningEffort: String, CaseIterable, Identifiable {
+    case unset   // 不发送参数
+    case low
+    case medium
+    case high
+    case max
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .unset: return "默认"
+        case .low: return "低"
+        case .medium: return "中"
+        case .high: return "高"
+        case .max: return "最高"
+        }
+    }
+
+    /// 从持久化字符串恢复；nil / 未知值视为不发送。
+    init(string: String?) {
+        self = ReasoningEffort(rawValue: string ?? "") ?? .unset
+    }
 }
 
 /// 全局设置：负责把非密配置存 UserDefaults，apiKey 存 Keychain。

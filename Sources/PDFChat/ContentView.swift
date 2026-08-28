@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
     @StateObject private var contextStore = PDFContextStore()
     @StateObject private var chatViewModel = ChatViewModel()
+    @StateObject private var historyStore = ConversationHistoryStore()
     @State private var sidebarVisible: Bool = true
     @State private var showOpenSheet = false
     @State private var undoHighlight: (() -> Void)?
@@ -23,11 +24,14 @@ struct ContentView: View {
                 .focusable()
                 .frame(minWidth: 360)
             if sidebarVisible {
-                ChatSidebarView(viewModel: chatViewModel, contextStore: contextStore)
+                ChatSidebarView(viewModel: chatViewModel, contextStore: contextStore, historyStore: historyStore)
                     .frame(maxWidth: 480)
             }
         }
-        .onAppear { loadIfNeeded() }
+        .onAppear {
+            chatViewModel.history = historyStore
+            loadIfNeeded()
+        }
         .onChange(of: pdfDocBinding.wrappedValue) { _, _ in loadIfNeeded() }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -37,7 +41,8 @@ struct ContentView: View {
                     Label("打开 PDF", systemImage: "folder")
                 }
                 Button {
-                    withAnimation { sidebarVisible.toggle() }
+                    // 不做动画：HSplitView 动画会带动大量 WKWebView 重排版，明显掉帧
+                    sidebarVisible.toggle()
                 } label: {
                     Label("侧边栏", systemImage: "sidebar.trailing")
                 }
@@ -69,6 +74,12 @@ struct ContentView: View {
     private func loadIfNeeded() {
         guard let doc = pdfDocBinding.wrappedValue, contextStore.document == nil else { return }
         contextStore.load(document: doc, url: fileURL)
+        chatViewModel.history = historyStore
+        // 加载该 PDF 的历史对话，并自动恢复最近一条
+        historyStore.load(for: contextStore.pdfURL ?? fileURL)
+        if let latest = historyStore.conversations.first {
+            chatViewModel.restore(messages: historyStore.load(latest))
+        }
     }
 
     private var pdfPane: some View {
