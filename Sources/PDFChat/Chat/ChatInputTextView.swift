@@ -45,7 +45,11 @@ struct ChatInputTextView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let tv = nsView.documentView as? SendableTextView else { return }
-        if tv.string != text { tv.string = text }
+        // macOS 27 重构了 NSTextView 内部机制：输入法组字期间对文本的任何外部
+        // 改写都会重置输入法会话（候选窗只剩最后一个按键、无法上屏），组字中绝不回写
+        if tv.string != text && !tv.hasMarkedText() {
+            tv.string = text
+        }
         // 顶部内边距随悬浮图片行的有无动态变化
         if tv.textContainerInset.height != topInset {
             tv.textContainerInset.height = topInset
@@ -61,6 +65,9 @@ struct ChatInputTextView: NSViewRepresentable {
         init(_ parent: ChatInputTextView) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
+            // 组字期间不同步到 SwiftUI 状态：避免每个按键触发重渲染，
+            // 进而避免 updateNSView 在组字中触碰文本；上屏后一次性同步
+            guard !tv.hasMarkedText() else { return }
             parent.text = tv.string
             parent.onTextChange()
         }
@@ -72,22 +79,18 @@ final class SendableTextView: NSTextView {
     var onSend: () -> Void = {}
     var onPasteImage: (NSImage) -> Void = { _ in }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 36 { // Return
-            // 输入法组字中（如中文输入法下临时输入英文）：
-            // 回车应先上屏候选文字，而不是直接发送。
-            if hasMarkedText() {
-                super.keyDown(with: event)
-                return
-            }
-            if event.modifierFlags.contains(.shift) {
-                super.keyDown(with: event) // 换行
+    // 不重写 keyDown：Enter 在文本系统内部（doCommandBy）拦截，位于输入法之后，
+    // 组字中按 Return 会先交给输入法上屏，天然不会触发发送。
+    override func doCommand(by selector: Selector) {
+        if selector == #selector(insertNewline(_:)) {
+            if NSEvent.modifierFlags.contains(.shift) {
+                super.doCommand(by: selector) // 换行
             } else {
                 onSend()
             }
             return
         }
-        super.keyDown(with: event)
+        super.doCommand(by: selector)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
