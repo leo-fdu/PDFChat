@@ -5,6 +5,35 @@ import AppKit
 
 final class RenderingRegressionTests: XCTestCase {
     @MainActor
+    func testDraftUndoDoesNotRegisterDocumentEdits() {
+        _ = NSApplication.shared
+        let window = DraftTestWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 140),
+                                     styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let input = SendableTextView(frame: window.contentView!.bounds)
+        input.allowsUndo = true
+        window.contentView = input
+        window.makeFirstResponder(input)
+        input.undoManager?.beginUndoGrouping()
+        input.insertText("draft", replacementRange: NSRange(location: 0, length: 0))
+        input.undoManager?.endUndoGrouping()
+        XCTAssertEqual(input.string, "draft")
+        XCTAssertFalse(window.documentUndoManager.canUndo, "Typing must not dirty the PDF's undo history")
+        XCTAssertTrue(input.undoManager?.canUndo == true)
+        let undo = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                                   timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                   characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6)!
+        XCTAssertTrue(input.performKeyEquivalent(with: undo))
+        XCTAssertEqual(input.string, "")
+        let redo = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift],
+                                   timestamp: 0, windowNumber: window.windowNumber, context: nil,
+                                   characters: "Z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6)!
+        XCTAssertTrue(input.performKeyEquivalent(with: redo))
+        XCTAssertEqual(input.string, "draft")
+        XCTAssertFalse(window.documentUndoManager.canUndo)
+    }
+    @MainActor
     func readyWeb() async throws -> (WKWebView, TranscriptView.Coordinator, NSWindow, ChatViewModel) {
         _ = NSApplication.shared
         let config = WKWebViewConfiguration()
@@ -89,4 +118,9 @@ final class RenderingRegressionTests: XCTestCase {
         let result5 = try await web.evaluateJavaScript("document.querySelectorAll('.content script,.content img,[href^=\"javascript:\"]').length") as? Int
         XCTAssertEqual(result5, 0)
     }
+}
+
+private final class DraftTestWindow: NSWindow {
+    let documentUndoManager = UndoManager()
+    override var undoManager: UndoManager? { documentUndoManager }
 }

@@ -5,7 +5,7 @@ struct ChatInputView: View {
     @ObservedObject var viewModel: ChatViewModel
     @ObservedObject var contextStore: PDFContextStore
     @ObservedObject private var slashStore = SlashCommandStore.shared
-    @State private var inputHeight: CGFloat = 70
+    @State private var inputHeight: CGFloat = 110
     @State private var showImages = false
     @State private var imageError: String?
     @State private var preparingImage = false
@@ -13,14 +13,6 @@ struct ChatInputView: View {
     private var matches: [PresetPrompt] { slashStore.matches(for: viewModel.inputText) }
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Picker("文档发送方式", selection: $contextStore.mode) {
-                    Label("PDF 文件", systemImage: "doc.richtext").tag(DocumentInputMode.pdf)
-                    Label("PDFKit 文字", systemImage: "text.alignleft").tag(DocumentInputMode.text)
-                }.pickerStyle(.segmented).labelsHidden()
-                    .help("PDF 文件：发送完整文件，需服务商支持。PDFKit 文字：提取全文后发送，适合文字为主的长文档。")
-                    .disabled(viewModel.isStreaming)
-            }.padding(10)
             if let quote = contextStore.quote {
                 HStack(alignment: .top, spacing: 8) {
                     Rectangle().fill(.tint).frame(width: 3)
@@ -31,7 +23,7 @@ struct ChatInputView: View {
                     }
                     Spacer(minLength: 0)
                     Button { contextStore.quote = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                }.fixedSize(horizontal: false, vertical: true).padding(10).background(Color.accentColor.opacity(0.05)).padding(.horizontal, 10)
+                }.fixedSize(horizontal: false, vertical: true).padding(10).background(Color.accentColor.opacity(0.05)).padding(.horizontal, 10).padding(.top, 10)
             }
             if !viewModel.pendingImages.isEmpty {
                 ScrollView(.horizontal) {
@@ -52,7 +44,7 @@ struct ChatInputView: View {
                 }
                 ChatInputTextView(text: $viewModel.inputText,
                                   onSend: { viewModel.send(contextStore: contextStore) }, onPasteImage: handleImage,
-                                  onTextChange: {}, onHeightChange: { inputHeight = min(max($0, 70), 220) }, focusObject: viewModel)
+                                  onTextChange: {}, onHeightChange: { inputHeight = min(max($0, 110), 260) }, focusObject: viewModel)
                     .frame(height: inputHeight)
             }
             if !matches.isEmpty {
@@ -64,7 +56,7 @@ struct ChatInputView: View {
                     }
                 }.padding(6).background(Color.accentColor.opacity(0.05))
             }
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Menu {
                     Button("添加图片…") { showImages = true }
                     Button("附加当前 PDF 页截图") { addPageImage() }.disabled(contextStore.reader == nil || preparingImage)
@@ -72,13 +64,21 @@ struct ChatInputView: View {
                 Menu {
                     ForEach(slashStore.presets) { prompt in Button(prompt.trigger) { viewModel.inputText = prompt.content } }
                 } label: { Image(systemName: "text.badge.star") }.menuStyle(.borderlessButton).fixedSize().help("快捷提示词")
+                Picker("文档发送方式", selection: $contextStore.mode) {
+                    Text("PDF 文件").tag(DocumentInputMode.pdf)
+                    Text("PDFKit 文字").tag(DocumentInputMode.text)
+                }
+                .pickerStyle(.segmented).labelsHidden().controlSize(.small)
+                .frame(maxWidth: 180)
+                .help("PDF 文件：发送完整文件，需服务商支持。PDFKit 文字：提取全文后发送，适合文字为主的长文档。")
+                .disabled(viewModel.isStreaming)
                 if preparingImage { ProgressView().controlSize(.mini) }
-                Spacer()
+                Spacer(minLength: 0)
                 if viewModel.isStreaming {
                     Button { viewModel.stop() } label: { Image(systemName: "stop.fill").frame(width: 22, height: 22) }.buttonStyle(.borderedProminent).help("停止生成")
                 } else {
                     Button { viewModel.send(contextStore: contextStore) } label: { Image(systemName: "arrow.up").fontWeight(.semibold).frame(width: 22, height: 22) }
-                        .buttonStyle(.borderedProminent).help("发送")
+                        .buttonStyle(.borderedProminent).help("发送（Return）；Shift+Return 换行")
                         .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewModel.pendingImages.isEmpty)
                 }
             }.foregroundStyle(.secondary).padding(.horizontal, 12).padding(.bottom, 10)

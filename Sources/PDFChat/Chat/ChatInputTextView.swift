@@ -104,6 +104,9 @@ struct ChatInputTextView: NSViewRepresentable {
 
 /// 自定义 NSTextView：拦截 Return 与 Cmd+V 粘贴图片。
 final class SendableTextView: NSTextView {
+    // Chat drafts are not PDF edits. Keep their undo registrations out of NSDocument.
+    private let draftUndoManager = UndoManager()
+    override var undoManager: UndoManager? { draftUndoManager }
     var onSend: () -> Void = {}
     var onPasteImage: (NSImage) -> Void = { _ in }
 
@@ -122,6 +125,13 @@ final class SendableTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.type == .keyDown, event.modifierFlags.contains(.command),
+           event.charactersIgnoringModifiers?.lowercased() == "z" {
+            breakUndoCoalescing()
+            if event.modifierFlags.contains(.shift) { draftUndoManager.redo() }
+            else { draftUndoManager.undo() }
+            return true
+        }
         if event.type == .keyDown,
            event.modifierFlags.contains(.command),
            event.charactersIgnoringModifiers == "v" {

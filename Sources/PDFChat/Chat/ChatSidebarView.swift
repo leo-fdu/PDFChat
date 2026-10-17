@@ -55,16 +55,29 @@ struct ChatSidebarView: View {
                     Toggle("允许联网", isOn: configBinding(\.webEnabled, fallback: false))
                     Toggle("允许页面图像工具", isOn: configBinding(\.visionEnabled, fallback: true))
                     Divider()
-                    Menu("推理强度") {
-                        ForEach(ReasoningEffort.allCases) { effort in
-                            Button(effort.label) { settings.config.reasoningEffort = effort == .unset ? nil : effort.rawValue; settings.save() }
-                        }
-                    }
                     Button("配置网络搜索…") { openSettings() }
                 } label: {
                     Label(settings.config.webEnabled == true ? "工具 · 联网已开" : "阅读工具", systemImage: settings.config.webEnabled == true ? "globe" : "wrench.and.screwdriver")
                         .font(.system(size: 11))
                 }.menuStyle(.borderlessButton).fixedSize().disabled(viewModel.isStreaming)
+                Menu {
+                    Picker("思考强度", selection: Binding(
+                        get: { ReasoningEffort(string: settings.config.reasoningEffort) },
+                        set: { settings.config.reasoningEffort = $0 == .unset ? nil : $0.rawValue; settings.save() }
+                    )) {
+                        ForEach(ReasoningEffort.allCases) { effort in
+                            Text(effort.label).tag(effort)
+                        }
+                    }.pickerStyle(.inline)
+                } label: {
+                    Text("思考 · \(ReasoningEffort(string: settings.config.reasoningEffort).label)")
+                        .font(.system(size: 11)).lineLimit(1)
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help("调整下一次请求的思考强度；默认使用服务商设置，其他档位需要模型支持。")
+                .accessibilityLabel("思考强度")
+                .accessibilityValue(ReasoningEffort(string: settings.config.reasoningEffort).label)
+                .disabled(viewModel.isStreaming)
                 Spacer()
                 Button { showStats.toggle() } label: { Image(systemName: "chart.bar.xaxis") }.buttonStyle(.plain).help("会话用量")
                     .popover(isPresented: $showStats) {
@@ -75,7 +88,6 @@ struct ChatSidebarView: View {
                             Text("依赖服务商返回的用量；不包含联网搜索等工具费用。") .font(.caption).foregroundStyle(.secondary)
                         }.padding(18).frame(width: 290)
                     }
-                Text("↵ 发送 · ⇧↵ 换行").font(.system(size: 10)).foregroundStyle(.tertiary)
             }.padding(.horizontal, 18).padding(.bottom, 12)
             if let error = historyStore.persistenceError { Text(error).font(.caption).foregroundStyle(.red).padding(8) }
         }.background(Color(NSColor.windowBackgroundColor))
