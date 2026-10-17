@@ -1,97 +1,195 @@
 import Foundation
 import PDFKit
 import SwiftUI
+import CryptoKit
 
-enum ContextMode: Equatable {
-    case fullDocument
-    case selection(String)
+enum DocumentInputMode: String, CaseIterable, Identifiable {
+    case pdf, text
+    var id: String { rawValue }
+    var label: String { self == .pdf ? "PDF 文件" : "PDFKit 文字" }
+}
+struct DocumentQuote: Codable, Equatable {
+    var text: String
+    var page: Int
+}
+struct PreparedDocument {
+    var pdf: PDFInput?
+    var text: String
 }
 
-/// 管理 PDF 文档及其上下文（全文 / 选区），并提供 token 估算。
+/// Uses its own PDFDocument, never the PDFView instance. Parsing and encoding run
+/// off the UI thread and are cached for the document's lifetime.
+actor PDFDocumentReader {
+    private let url: URL?
+    private var bytes: Data?
+    private var parsed: PDFDocument?
+    private var encoded: PDFInput?
+    private var pageTexts: [Int: String] = [:]
+    init(url: URL?, data: Data?) { self.url = url; self.bytes = data }
+    private func data() throws -> Data {
+        if let bytes { return bytes }
+        guard let url else { throw ChatError.configuration("请先打开 PDF。") }
+        let value = try Data(contentsOf: url, options: .mappedIfSafe)
+        bytes = value
+        return value
+    }
+    private func document() throws -> PDFDocument {
+        if let parsed { return parsed }
+        guard let doc = PDFDocument(data: try data()), !doc.isLocked else { throw ChatError.configuration("PDF 无法读取或需要密码。") }
+        parsed = doc
+        return doc
+    }
+    func identity() throws -> String { SHA256.hash(data: try data()).map { String(format: "%02x", $0) }.joined() }
+    func prepare(mode: DocumentInputMode) throws -> PreparedDocument {
+        try Task.checkCancellation()
+        if mode == .pdf {
+            if let encoded { return .init(pdf: encoded, text: "") }
+            let bytes = try data()
+            guard bytes.count < 50_000_000 else { throw ChatError.configuration("PDF 超过默认 50 MB 上传限制，请切换 PDFKit 文字模式。服务商可能还有更低限制。") }
+            let input = PDFInput(filename: url?.lastPathComponent ?? "document.pdf", base64: bytes.base64EncodedString())
+            encoded = input
+            return .init(pdf: input, text: "")
+        }
+        let doc = try document()
+        var chunks: [String] = []
+        for index in 0..<doc.pageCount {
+            try Task.checkCancellation()
+            chunks.append("[第 \(index + 1) 页]\n" + (try pageText(index + 1)))
+        }
+        guard pageTexts.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+            throw ChatError.configuration("此 PDF 没有可提取的文字。请使用 PDF 文件模式，或发送页面截图。")
+        }
+        return .init(pdf: nil, text: chunks.joined(separator: "\n\n"))
+    }
+    func pageText(_ number: Int) throws -> String {
+        if let cached = pageTexts[number] { return cached }
+        let doc = try document()
+        guard number >= 1, number <= doc.pageCount, let page = doc.page(at: number - 1) else {
+            throw ChatError.configuration("页码超出范围（1–\(doc.pageCount)）。")
+        }
+        let text = page.string ?? ""
+        pageTexts[number] = text
+        return text
+    }
+    func search(_ query: String) throws -> String {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "请输入搜索词。" }
+        let doc = try document()
+        var results: [String] = []
+        for page in 1...max(doc.pageCount, 1) {
+            try Task.checkCancellation()
+            let text = try pageText(page)
+            if let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
+                let start = text.index(range.lowerBound, offsetBy: -240, limitedBy: text.startIndex) ?? text.startIndex
+                let end = text.index(range.upperBound, offsetBy: 600, limitedBy: text.endIndex) ?? text.endIndex
+                results.append("[第 \(page) 页](pdfchat://page/\(page))\n" + text[start..<end])
+                if results.count == 20 { break }
+            }
+        }
+        return results.isEmpty ? "未找到匹配文字。扫描页可使用 view_pdf_page 查看。" : results.joined(separator: "\n\n")
+    }
+    func pageImage(_ number: Int) throws -> String {
+        let doc = try document()
+        guard number >= 1, number <= doc.pageCount, let page = doc.page(at: number - 1) else { throw ChatError.configuration("页码超出范围。") }
+        let bounds = page.bounds(for: .cropBox)
+        let ratio = 1600 / max(bounds.width, bounds.height, 1)
+        let image = page.thumbnail(of: NSSize(width: bounds.width * ratio, height: bounds.height * ratio), for: .cropBox)
+        guard let data = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data),
+              let png = bitmap.representation(using: .png, properties: [:]) else { throw ChatError.configuration("页面图像生成失败。") }
+        return "data:image/png;base64," + png.base64EncodedString()
+    }
+}
+
 @MainActor
 final class PDFContextStore: ObservableObject {
-    @Published var pdfURL: URL?
     @Published private(set) var document: PDFDocument?
+    @Published private(set) var pdfURL: URL?
+    @Published var mode: DocumentInputMode = .pdf
+    @Published var quote: DocumentQuote?
+    @Published var selectedText = ""
+    @Published var selectedPage = 1
+    @Published var currentPage = 1
+    @Published var zoom: CGFloat = 1
+    @Published var searchQuery = ""
+    @Published var searchStatus = ""
+    @Published var isSearching = false
+    @Published var identity: String?
+    var reader: PDFDocumentReader?
+    weak var pdfView: PDFView?
+    var onAsk: ((String) -> Void)?
+    var pageCount: Int { document?.pageCount ?? 0 }
+    var filename: String { pdfURL?.lastPathComponent ?? "PDF 文档" }
+    var hasSelection: Bool { quote != nil }
+    var contextLabel: String { mode.label }
+    private var restoredPosition = false
+    private var results: [PDFSelection] = []
+    private var resultIndex = 0
 
-    @Published var selectedText: String = ""
-    @Published var contextMode: ContextMode = .fullDocument
-    /// 是否有未保存到磁盘的高亮更改（高亮 / 撤销后置 true，写盘成功后置 false）。
-    @Published var hasUnsavedChanges: Bool = false {
-        didSet {
-            // 标记为脏的同时清除底层 NSDocument 的编辑标记：
-            // 该文档 viewing-only 不支持 autosave，否则系统会尝试自动保存并失败弹窗。
-            if hasUnsavedChanges {
-                DocumentEditStateCleaner.clear(window: nil, url: pdfURL)
-            }
+    func load(document: PDFDocument, url: URL?) {
+        self.document = document; pdfURL = url
+        reader = PDFDocumentReader(url: url, data: url == nil ? document.dataRepresentation() : nil)
+    }
+    func setIdentity(_ id: String) {
+        identity = id
+        restorePositionIfReady()
+    }
+    func restorePositionIfReady() {
+        guard !restoredPosition, let id = identity, let view = pdfView, view.bounds.width > 200, view.window != nil else { return }
+        let savedPage = UserDefaults.standard.integer(forKey: "reading.page.\(id)")
+        let scale = UserDefaults.standard.double(forKey: "reading.zoom.\(id)")
+        view.autoScales = false
+        if scale > 0 { view.scaleFactor = scale; zoom = scale } else { fitWidth() }
+        goToPage(savedPage > 0 ? savedPage : 1)
+        restoredPosition = true
+        recordPosition()
+    }
+    func recordPosition() {
+        guard let pdfView, let document, let page = pdfView.currentPage else { return }
+        currentPage = document.index(for: page) + 1
+        zoom = pdfView.scaleFactor
+        if restoredPosition, let identity {
+            UserDefaults.standard.set(currentPage, forKey: "reading.page.\(identity)")
+            UserDefaults.standard.set(Double(zoom), forKey: "reading.zoom.\(identity)")
         }
     }
-
-    private var fullTextCache: String = ""
-
-    var fullText: String {
-        if fullTextCache.isEmpty { fullTextCache = document?.string ?? "" }
-        return fullTextCache
+    func pinSelection(prompt: String = "") {
+        guard !selectedText.isEmpty else { return }
+        quote = .init(text: selectedText, page: selectedPage)
+        onAsk?(prompt)
     }
-
-    var contextText: String {
-        switch contextMode {
-        case .fullDocument: return fullText
-        case .selection(let s): return s
-        }
+    func goToPage(_ page: Int) {
+        guard let document, let target = document.page(at: max(0, min(page - 1, document.pageCount - 1))) else { return }
+        pdfView?.go(to: target)
+        currentPage = document.index(for: target) + 1
     }
-
-    var contextTokenCount: Int {
-        TokenEstimator.estimate(contextText)
+    func fitWidth() {
+        guard let view = pdfView, let page = view.currentPage else { return }
+        view.autoScales = false
+        view.scaleFactor = max(0.25, (view.bounds.width - 32) / page.bounds(for: .cropBox).width)
+        recordPosition()
     }
-
-    var hasSelection: Bool {
-        if case .selection = contextMode { return true }
-        return false
+    func scale(_ factor: CGFloat) {
+        guard let view = pdfView else { return }
+        view.autoScales = false
+        view.scaleFactor = max(0.25, min(5, view.scaleFactor * factor)); recordPosition()
     }
-
-    var contextLabel: String {
-        switch contextMode {
-        case .fullDocument: return "全文"
-        case .selection(let s):
-            let preview = s.prefix(60).replacingOccurrences(of: "\n", with: " ")
-            return "选区：\(preview)…"
-        }
+    func beginSearch() {
+        document?.cancelFindString()
+        results = []; resultIndex = 0; searchStatus = ""
+        guard !searchQuery.isEmpty else { pdfView?.highlightedSelections = nil; return }
+        isSearching = true
+        document?.beginFindString(searchQuery, withOptions: [.caseInsensitive])
     }
-
-    func load(url: URL) {
-        let resolving = url.resolvingSymlinksInPath()
-        if let doc = PDFDocument(url: resolving) {
-            self.pdfURL = resolving
-            self.document = doc
-            self.fullTextCache = ""
-            self.selectedText = ""
-            self.contextMode = .fullDocument
-            self.hasUnsavedChanges = false
-        }
+    func addSearchResult(_ selection: PDFSelection) { results.append(selection) }
+    func finishSearch() {
+        isSearching = false
+        searchStatus = results.isEmpty ? "未找到" : "1 / \(results.count)"
+        if let first = results.first { pdfView?.setCurrentSelection(first, animate: false); pdfView?.go(to: first) }
     }
-
-    func load(document: PDFDocument, url: URL? = nil) {
-        self.pdfURL = url
-        self.document = document
-        self.fullTextCache = ""
-        self.selectedText = ""
-        self.contextMode = .fullDocument
-        self.hasUnsavedChanges = false
-    }
-
-    func updateSelection(_ text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        selectedText = trimmed
-        if trimmed.isEmpty {
-            if case .selection = contextMode {
-                contextMode = .fullDocument
-            }
-        } else {
-            contextMode = .selection(trimmed)
-        }
-    }
-
-    func resetToFull() {
-        contextMode = .fullDocument
+    func nextResult(_ offset: Int) {
+        guard !results.isEmpty else { return }
+        resultIndex = (resultIndex + offset + results.count) % results.count
+        pdfView?.setCurrentSelection(results[resultIndex], animate: false)
+        pdfView?.go(to: results[resultIndex])
+        searchStatus = "\(resultIndex + 1) / \(results.count)"
     }
 }

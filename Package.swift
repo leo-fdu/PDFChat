@@ -7,7 +7,9 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PDFChat",
-            path: "Sources/PDFChat"
-        )
+            path: "Sources/PDFChat",
+            resources: [.copy("Resources/Web")]
+        ),
+        .testTarget(name: "PDFChatTests", dependencies: ["PDFChat"])
     ]
 )

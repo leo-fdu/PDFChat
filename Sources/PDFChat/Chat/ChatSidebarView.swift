@@ -4,260 +4,114 @@ struct ChatSidebarView: View {
     @ObservedObject var viewModel: ChatViewModel
     @ObservedObject var contextStore: PDFContextStore
     @ObservedObject var historyStore: ConversationHistoryStore
-    @ObservedObject var slashStore: SlashCommandStore = .shared
-    @ObservedObject var settings = AppSettings.shared
-
-    @AppStorage("chat.inputPaneHeight") private var inputPaneHeight: Double = 200
+    @ObservedObject private var settings = AppSettings.shared
     @State private var showHistory = false
-
+    @State private var showStats = false
+    @Environment(\.openSettings) private var openSettings
     var body: some View {
         VStack(spacing: 0) {
-            // 顶栏：模型切换 + 推理强度 + 历史 + 新对话
-            HStack(spacing: 8) {
-                Menu(viewModel.currentModel) {
-                    ForEach(settings.config.models, id: \.self) { m in
-                        Button(m) { viewModel.switchModel(m) }
-                    }
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-
-                reasoningMenu
-
-                Spacer()
-
-                Button {
-                    showHistory = true
-                } label: {
-                    Label("历史对话", systemImage: "clock.arrow.circlepath")
-                }
-                .help("查看此 PDF 的历史对话")
-                .popover(isPresented: $showHistory, arrowEdge: .bottom) {
-                    HistoryListView(historyStore: historyStore, viewModel: viewModel)
-                        .frame(width: 340, height: 400)
-                }
-
-                Button {
-                    viewModel.newConversation()
-                } label: {
-                    Label("新对话", systemImage: "plus.bubble")
-                }
-                .help("新对话 (⌘N)")
-            }
-            .padding(8)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
-
-            // context 状态条
-            HStack(spacing: 6) {
-                Image(systemName: contextStore.hasSelection ? "scissors" : "doc.text")
-                    .foregroundColor(contextStore.hasSelection ? .orange : .accentColor)
-                Text(contextStore.contextLabel)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer()
-                Text("≈ \(contextStore.contextTokenCount.formatted) tok")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                if contextStore.hasSelection {
-                    Button {
-                        contextStore.resetToFull()
-                    } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("重置为全文")
-                }
-            }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Color.secondary.opacity(0.08))
-
-            // 消息列表
-            MessageListView(viewModel: viewModel)
-
-            Divider()
-
-            // 输入区：无边框，浅灰色背景；拖拽分隔条（隐形）调整高度
-            InputResizeHandle(height: $inputPaneHeight)
-            ChatInputView(viewModel: viewModel, slashStore: slashStore, contextStore: contextStore)
-                .frame(height: inputPaneHeight)
-                .background(Color.secondary.opacity(0.1))
-                .padding(.bottom, 4)
-
-            // 底部 token 统计条
-            sessionStats
-        }
-        .frame(minWidth: 320, idealWidth: 380)
-        .background(Color(NSColor.windowBackgroundColor))
-    }
-
-    // MARK: - 推理强度（reasoning_effort）快速切换
-
-    private var currentEffort: ReasoningEffort {
-        ReasoningEffort(string: settings.config.reasoningEffort)
-    }
-
-    private var reasoningMenu: some View {
-        Menu {
-            ForEach(ReasoningEffort.allCases) { effort in
-                Button {
-                    settings.config.reasoningEffort = effort == .unset ? nil : effort.rawValue
-                    settings.save()
-                } label: {
-                    if effort == currentEffort {
-                        Label(effort.label, systemImage: "checkmark")
-                    } else {
-                        Text(effort.label)
-                    }
-                }
-            }
-        } label: {
-            Label("推理：\(currentEffort.label)", systemImage: "brain")
-                .font(.caption)
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("调整推理强度（reasoning_effort），默认表示由服务端决定")
-    }
-
-    // MARK: - 历史对话（弹出面板）
-
-    private var sessionStats: some View {
-        HStack(spacing: 10) {
-            Text("本次会话")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            Label("\(viewModel.sessionTotalTokens.formatted) tok", systemImage: "bolt")
-                .font(.caption2)
-            Label(String(format: "$%.4f", viewModel.sessionCost), systemImage: "dollarsign.circle")
-                .font(.caption2)
-            Spacer()
-            if viewModel.isStreaming {
-                Button {
-                    viewModel.stop()
-                } label: {
-                    Label("停止", systemImage: "stop.fill")
-                        .font(.caption2)
-                }
-                .buttonStyle(.borderless)
-                .help("中断当前生成")
-            }
-            if let err = viewModel.error {
-                Text(err).font(.caption2).foregroundColor(.red).lineLimit(1)
-            }
-        }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Color.secondary.opacity(0.08))
-    }
-}
-
-/// 历史对话弹出面板：点击恢复该对话，右侧垃圾桶删除；
-/// popover 为 transient 行为，点击面板外任意空白处自动收回。
-private struct HistoryListView: View {
-    @ObservedObject var historyStore: ConversationHistoryStore
-    @ObservedObject var viewModel: ChatViewModel
-
-    var body: some View {
-        Group {
-            if historyStore.conversations.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 32))
-                        .foregroundColor(.secondary)
-                    Text("暂无历史对话")
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(historyStore.conversations) { conv in
-                            Button {
-                                viewModel.restore(messages: historyStore.load(conv))
-                            } label: {
-                                HStack(spacing: 6) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(conv.title)
-                                            .font(.callout)
-                                            .foregroundColor(conv.id == historyStore.currentConversationID ? .accentColor : .primary)
-                                            .lineLimit(1)
-                                        HStack(spacing: 4) {
-                                            Text(conv.updatedAt, style: .date)
-                                            Text(conv.updatedAt, style: .time)
-                                            Text("· \(conv.messages.count) 条")
-                                        }
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                    }
-                                    .contentShape(Rectangle())
-                                    Spacer(minLength: 4)
-                                    if conv.id == historyStore.currentConversationID {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .font(.caption)
-                                            .foregroundColor(.accentColor)
-                                    }
-                                    Button {
-                                        if conv.id == historyStore.currentConversationID {
-                                            viewModel.newConversation()
-                                        }
-                                        historyStore.delete(conv)
-                                    } label: {
-                                        Image(systemName: "trash")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .help("删除此对话")
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 5)
-                                .background(conv.id == historyStore.currentConversationID
-                                            ? Color.accentColor.opacity(0.08) : Color.clear)
-                                .cornerRadius(6)
-                                .contentShape(Rectangle())
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle").foregroundStyle(.tint).font(.system(size: 19))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("阅读助手").font(.system(size: 14, weight: .semibold))
+                    Menu {
+                        ForEach(settings.profiles) { profile in
+                            Button(profile.name) { settings.select(profile.id) }
+                        }
+                        Divider()
+                        ForEach(settings.config.models, id: \.self) { model in
+                            Button { viewModel.switchModel(model) } label: {
+                                if model == settings.config.model { Label(model, systemImage: "checkmark") } else { Text(model) }
                             }
-                            .buttonStyle(.plain)
+                        }
+                        Divider()
+                        Button("管理连接…") { openSettings() }
+                    } label: {
+                        Text(settings.config.model.isEmpty ? "选择模型" : settings.config.model).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                    }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(viewModel.isStreaming)
+                }
+                Spacer(minLength: 8)
+                Button { showHistory.toggle() } label: { Image(systemName: "clock.arrow.circlepath") }.help("此 PDF 的对话历史")
+                    .popover(isPresented: $showHistory) {
+                        HistoryListView(history: historyStore, model: viewModel, dismiss: { showHistory = false }).frame(width: 340, height: 380)
+                    }
+                Button { viewModel.newConversation() } label: { Image(systemName: "square.and.pencil") }.help("新对话（⌘N）")
+                Button { openSettings() } label: { Image(systemName: "slider.horizontal.3") }.help("连接与偏好设置")
+            }.buttonStyle(.borderless).padding(.horizontal, 18).padding(.vertical, 15)
+            Divider().opacity(0.6)
+            MessageListView(viewModel: viewModel, contextStore: contextStore)
+            if viewModel.isStreaming {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text(viewModel.activity).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                }.padding(.horizontal, 20).padding(.vertical, 6)
+            }
+            ChatInputView(viewModel: viewModel, contextStore: contextStore)
+                .padding(.horizontal, 14).padding(.bottom, 10)
+            HStack(spacing: 8) {
+                Menu {
+                    Toggle("允许文档工具", isOn: configBinding(\.toolsEnabled, fallback: true))
+                    Toggle("允许联网", isOn: configBinding(\.webEnabled, fallback: false))
+                    Toggle("允许页面图像工具", isOn: configBinding(\.visionEnabled, fallback: true))
+                    Divider()
+                    Menu("推理强度") {
+                        ForEach(ReasoningEffort.allCases) { effort in
+                            Button(effort.label) { settings.config.reasoningEffort = effort == .unset ? nil : effort.rawValue; settings.save() }
                         }
                     }
-                    .padding(8)
-                }
-            }
-        }
-        .background(Color(NSColor.controlBackgroundColor))
+                    Button("配置网络搜索…") { openSettings() }
+                } label: {
+                    Label(settings.config.webEnabled == true ? "工具 · 联网已开" : "阅读工具", systemImage: settings.config.webEnabled == true ? "globe" : "wrench.and.screwdriver")
+                        .font(.system(size: 11))
+                }.menuStyle(.borderlessButton).fixedSize().disabled(viewModel.isStreaming)
+                Spacer()
+                Button { showStats.toggle() } label: { Image(systemName: "chart.bar.xaxis") }.buttonStyle(.plain).help("会话用量")
+                    .popover(isPresented: $showStats) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("会话用量").font(.headline)
+                            Text("输入 \(viewModel.sessionPromptTokens.formatted()) · 输出 \(viewModel.sessionCompletionTokens.formatted()) tokens")
+                            Text(settings.config.pricing[settings.config.model] == nil ? "当前模型未配置价格" : String(format: "模型费用估算 $%.4f", viewModel.sessionCost))
+                            Text("依赖服务商返回的用量；不包含联网搜索等工具费用。") .font(.caption).foregroundStyle(.secondary)
+                        }.padding(18).frame(width: 290)
+                    }
+                Text("↵ 发送 · ⇧↵ 换行").font(.system(size: 10)).foregroundStyle(.tertiary)
+            }.padding(.horizontal, 18).padding(.bottom, 12)
+            if let error = historyStore.persistenceError { Text(error).font(.caption).foregroundStyle(.red).padding(8) }
+        }.background(Color(NSColor.windowBackgroundColor))
+    }
+    private func configBinding(_ key: WritableKeyPath<APIConfig, Bool?>, fallback: Bool) -> Binding<Bool> {
+        Binding(get: { settings.config[keyPath: key] ?? fallback }, set: { settings.config[keyPath: key] = $0; settings.save() })
     }
 }
-
-/// 输入区分隔条：上下拖拽调整输入区高度，高度经 AppStorage 持久化。
-/// 视觉上完全隐形（无 bar、无指示条），仅提供拖拽区域与调整光标。
-/// 必须用 .global 坐标系：分隔条会随输入区变大而上移，若用默认局部坐标系，
-/// 手势位移会被自身移动抵消一半（鼠标移 2px 高度只变 1px），不跟手。
-private struct InputResizeHandle: View {
-    @Binding var height: Double
-    @State private var dragStartHeight: Double = 0
-    @State private var dragStartMouseY: CGFloat = 0
-    @State private var isDragging = false
-
+private struct HistoryListView: View {
+    @ObservedObject var history: ConversationHistoryStore
+    @ObservedObject var model: ChatViewModel
+    var dismiss: () -> Void
     var body: some View {
-        Rectangle()
-            .fill(Color.clear)
-            .frame(height: 10)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+        VStack(alignment: .leading) {
+            Text("这份 PDF 的对话").font(.headline).padding(16)
+            if history.conversations.isEmpty {
+                ContentUnavailableView("还没有历史对话", systemImage: "bubble.left.and.bubble.right", description: Text("对话会自动保存在这台 Mac 上。"))
+            } else {
+                List(history.conversations) { conversation in
+                    HStack {
+                        Button {
+                            model.stop()
+                            model.restore(messages: history.load(conversation)); dismiss()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(conversation.title).lineLimit(2)
+                                Text(conversation.updatedAt, style: .date).font(.caption).foregroundStyle(.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        Button {
+                            if history.currentConversationID == conversation.id { model.newConversation() }
+                            history.delete(conversation)
+                        } label: { Image(systemName: "trash").foregroundStyle(.secondary) }.buttonStyle(.borderless).help("删除对话")
+                    }.padding(.vertical, 5)
+                }.listStyle(.plain)
             }
-            .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .onChanged { value in
-                        if !isDragging {
-                            dragStartHeight = height
-                            dragStartMouseY = value.startLocation.y
-                            isDragging = true
-                        }
-                        // 全局坐标 y 向下为正：鼠标上移 → y 变小 → 高度增大，严格 1:1
-                        let delta = dragStartMouseY - value.location.y
-                        height = min(max(dragStartHeight + delta, 120), 700)
-                    }
-                    .onEnded { _ in isDragging = false }
-            )
+        }
     }
 }

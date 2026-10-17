@@ -1,362 +1,108 @@
 import SwiftUI
-import AppKit
 import WebKit
+import AppKit
 
-/// 用 WKWebView 渲染 Markdown + LaTeX + 代码高亮。
-/// JS 库（marked / KaTeX / highlight.js）通过 CDN 加载，本地无需打包资源。
-struct MarkdownView: View {
-    let text: String
-
-    @State private var height: CGFloat = 1
-
-    var body: some View {
-        MarkdownWebView(text: text, height: $height)
-            .frame(height: max(height, 1))
+/// A single, independently scrolling WebView for the transcript. No per-bubble
+/// height bridge or nested SwiftUI ScrollView. Only changed messages cross IPC.
+struct TranscriptView: NSViewRepresentable {
+    @ObservedObject var viewModel: ChatViewModel
+    var onPage: (Int) -> Void
+    var onRetry: () -> Void
+    static var webDirectory: URL {
+        let packaged = Bundle.main.url(forResource: "PDFChat_PDFChat", withExtension: "bundle").flatMap(Bundle.init(url:))
+        return (packaged ?? Bundle.module).url(forResource: "Web", withExtension: nil)!
     }
-}
-
-struct MarkdownWebView: NSViewRepresentable {
-    let text: String
-    @Binding var height: CGFloat
-
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        let userContent = config.userContentController
-        userContent.add(context.coordinator, name: "ready")
-        userContent.add(context.coordinator, name: "height")
-
-        let webView = PassthroughScrollWebView(frame: .zero, configuration: config)
-        webView.navigationDelegate = context.coordinator
-        // 公开 API：让 webview 背景透明，融入气泡底色。
-        webView.underPageBackgroundColor = .clear
-        // 禁用 webview 自身的捏合缩放，避免与 PDF 缩放手势冲突。
-        webView.allowsMagnification = false
-        context.coordinator.webView = webView
-
-        webView.loadHTMLString(Self.htmlTemplate, baseURL: URL(string: "https://cdn.jsdelivr.net/")!)
-        return webView
+        config.userContentController.add(context.coordinator, name: "ready")
+        config.userContentController.add(context.coordinator, name: "action")
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.underPageBackgroundColor = .clear
+        view.setValue(false, forKey: "drawsBackground")
+        view.allowsMagnification = false
+        view.navigationDelegate = context.coordinator
+        context.coordinator.webView = view
+        context.coordinator.model = viewModel
+        let directory = Self.webDirectory
+        view.loadFileURL(directory.appendingPathComponent("index.html"), allowingReadAccessTo: directory)
+        return view
     }
-
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        context.coordinator.heightBinding = { [weak nsView] value in
-            DispatchQueue.main.async {
-                // live resize（拖窗口/最大化动画）期间延迟应用高度：
-                // 此时每帧都在整窗重排，若再改 frame 会让 LazyVStack 层层级联重排，掉帧严重。
-                if let nsView, let window = nsView.window, window.inLiveResize {
-                    context.coordinator.queueHeight(value)
-                    return
-                }
-                // 禁用隐式动画：高度变化若参与动画会反复触发布局，造成流式输出掉帧
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { self.height = value }
-            }
-        }
-        // 仅当文本变化时才重渲染，避免 height→frame→updateNSView 的循环
-        if context.coordinator.lastText != text {
-            context.coordinator.lastText = text
-            context.coordinator.requestRender(text: text, in: nsView)
-        }
+    func updateNSView(_ view: WKWebView, context: Context) {
+        context.coordinator.model = viewModel
+        context.coordinator.onPage = onPage
+        context.coordinator.onRetry = onRetry
+        context.coordinator.requestUpdate()
     }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    // MARK: - HTML 模板
-
-    static let htmlTemplate: String = #"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="utf-8">
-    <meta name="color-scheme" content="light dark">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/styles/github.min.css" media="(prefers-color-scheme: light)">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
-    <style>
-      html, body {
-        margin: 0; padding: 0;
-        background: transparent;
-        overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
-        font-size: 13px;
-        line-height: 1.55;
-        -webkit-font-smoothing: antialiased;
-        text-rendering: optimizeLegibility;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-      }
-      @media (prefers-color-scheme: light) { body { color: #1d1d1f; } }
-      @media (prefers-color-scheme: dark)  { body { color: #e6e6e6; } }
-      p { margin: 0 0 8px; }
-      p:last-child { margin-bottom: 0; }
-      h1,h2,h3,h4,h5,h6 { margin: 12px 0 6px; line-height: 1.3; font-weight: 600; }
-      h1 { font-size: 1.4em; } h2 { font-size: 1.25em; } h3 { font-size: 1.1em; }
-      ul, ol { margin: 0 0 8px; padding-left: 22px; }
-      li { margin: 2px 0; }
-      blockquote {
-        margin: 0 0 8px; padding: 2px 10px;
-        border-left: 3px solid rgba(128,128,128,0.4);
-        color: inherit; opacity: 0.85;
-      }
-      code {
-        font-family: "SF Mono", Menlo, Consolas, monospace;
-        font-size: 0.88em;
-        padding: 1px 4px;
-        border-radius: 4px;
-        background: rgba(128,128,128,0.18);
-      }
-      pre {
-        margin: 0 0 8px; padding: 8px 10px;
-        border-radius: 6px;
-        overflow-x: auto;
-        background: rgba(128,128,128,0.12);
-      }
-      pre code { padding: 0; background: transparent; font-size: 0.85em; }
-      a { color: #007aff; text-decoration: none; }
-      a:hover { text-decoration: underline; }
-      table {
-        border-collapse: collapse; margin: 0 0 8px; display: block;
-        overflow-x: auto; max-width: 100%;
-      }
-      th, td { border: 1px solid rgba(128,128,128,0.35); padding: 4px 8px; text-align: left; }
-      th { background: rgba(128,128,128,0.15); font-weight: 600; }
-      img { max-width: 100%; border-radius: 4px; }
-      hr { border: none; border-top: 1px solid rgba(128,128,128,0.3); margin: 10px 0; }
-      .katex-display { margin: 8px 0; overflow-x: auto; overflow-y: hidden; }
-    </style>
-    </head>
-    <body></body>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.8.0/build/highlight.min.js"></script>
-    <script>
-      marked.setOptions({ gfm: true, breaks: true });
-
-      var lastPostedHeight = -1;
-      function postHeight() {
-        var h = document.body.scrollHeight;
-        // 高度没变就不回报，避免 resize 期间每个观察回调都跨进程发消息
-        if (h === lastPostedHeight) return;
-        lastPostedHeight = h;
-        try { window.webkit.messageHandlers.height.postMessage(String(h)); } catch (e) {}
-      }
-
-      var mathStore = [];
-
-      function protectMath(md) {
-        mathStore = [];
-        var n = md.length;
-        var inCode = new Array(n);
-        var pos = 0;
-        var fenced = false, fenceCh = '', fenceLen = 0;
-        var lines = md.split('\n');
-        for (var k = 0; k < lines.length; k++) {
-          var line = lines[k];
-          var t = line.replace(/^[ \t]+/, '');
-          if (fenced) {
-            for (var q = pos; q < pos + line.length; q++) inCode[q] = true;
-            var cm = t.match(/^(`{3,}|~{3,})[ \t]*$/);
-            if (cm && cm[1].charAt(0) === fenceCh && cm[1].length >= fenceLen) {
-              fenced = false;
-              for (var q2 = pos; q2 < pos + line.length; q2++) inCode[q2] = false;
-            }
-          } else {
-            var fm = t.match(/^(`{3,}|~{3,})/);
-            if (fm) {
-              fenced = true;
-              fenceCh = fm[1].charAt(0);
-              fenceLen = fm[1].length;
-              for (var q3 = pos; q3 < pos + line.length; q3++) inCode[q3] = true;
-            }
-          }
-          pos += line.length + 1;
-        }
-        var out = '';
-        var i = 0;
-        while (i < n) {
-          if (inCode[i]) { out += md.charAt(i); i++; continue; }
-          if (md.charAt(i) === '`') {
-            var j = i;
-            while (j < n && md.charAt(j) === '`') j++;
-            var run = md.slice(i, j);
-            var end = md.indexOf(run, j);
-            if (end === -1) { out += run; i = j; continue; }
-            out += md.slice(i, end + run.length);
-            i = end + run.length;
-            continue;
-          }
-          var m = null;
-          if (md.slice(i, i + 2) === '$$') {
-            m = /^\$\$([\s\S]*?)\$\$/.exec(md.slice(i));
-          } else if (md.slice(i, i + 2) === '\\[') {
-            m = /^\\\[([\s\S]*?)\\\]/.exec(md.slice(i));
-          } else if (md.slice(i, i + 2) === '\\(') {
-            m = /^\\\(([\s\S]*?)\\\)/.exec(md.slice(i));
-          } else if (md.charAt(i) === '$') {
-            m = /^\$(\S(?:[^$\n]*\S)?)\$/.exec(md.slice(i));
-          }
-          if (m) {
-            out += '%%MATH' + mathStore.length + '%%';
-            mathStore.push(m[0]);
-            i += m[0].length;
-          } else {
-            out += md.charAt(i);
-            i++;
-          }
-        }
-        return out;
-      }
-
-      function restoreMath(html) {
-        return html.replace(/%%MATH(\d+)%%/g, function (all, d) {
-          var seg = mathStore[Number(d)];
-          return seg === undefined ? all : escapeHtml(seg);
-        });
-      }
-
-      function renderMarkdown(md) {
-        try {
-          var hasMarked = !!window.marked;
-          var src = hasMarked ? protectMath(md) : md;
-          var html = (hasMarked ? marked.parse(src) : escapeHtml(md));
-          if (hasMarked) html = restoreMath(html);
-          document.body.innerHTML = html;
-          if (window.hljs) {
-            document.querySelectorAll('pre code').forEach(function (b) {
-              try { hljs.highlightElement(b); } catch (e) {}
-            });
-          }
-          if (window.renderMathInElement) {
-            try {
-              renderMathInElement(document.body, {
-                delimiters: [
-                  { left: '$$', right: '$$', display: true },
-                  { left: '\\[', right: '\\]', display: true },
-                  { left: '\\(', right: '\\)', display: false },
-                  { left: '$', right: '$', display: false }
-                ],
-                throwOnError: false,
-                ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
-              });
-            } catch (e) {}
-          }
-        } catch (e) {
-          document.body.innerText = md;
-        }
-        postHeight();
-      }
-
-      function escapeHtml(s) {
-        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-
-      // 字体加载等导致的回流后重新测量高度
-      if (window.ResizeObserver) {
-        new ResizeObserver(function () { postHeight(); }).observe(document.body);
-      }
-
-      window.addEventListener('load', function () {
-        try { window.webkit.messageHandlers.ready.postMessage('ready'); } catch (e) {}
-      });
-    </script>
-    </html>
-    """#
-}
-
-// MARK: - Coordinator
-
-extension MarkdownWebView {
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    static func dismantleNSView(_ view: WKWebView, coordinator: Coordinator) {
+        view.configuration.userContentController.removeAllScriptMessageHandlers()
+        view.stopLoading(); view.navigationDelegate = nil
+        coordinator.webView = nil
+    }
+    @MainActor final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         weak var webView: WKWebView?
-        var heightBinding: ((CGFloat) -> Void)?
-        var pageReady: Bool = false
-        var queuedText: String?
-
-        var lastText: String?
-        private var lastRender: Date = .distantPast
-        private var pending: DispatchWorkItem?
-
-        /// live resize 期间暂缓的高度值（每帧只保留最新一个）。
-        private var pendingHeight: CGFloat?
-        private var endResizeObserver: NSObjectProtocol?
-
-        func queueHeight(_ h: CGFloat) {
-            pendingHeight = h
-            guard endResizeObserver == nil else { return }
-            endResizeObserver = NotificationCenter.default.addObserver(
-                forName: NSWindow.didEndLiveResizeNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.flushQueuedHeight()
+        weak var model: ChatViewModel?
+        var onPage: ((Int) -> Void)?
+        var onRetry: (() -> Void)?
+        var ready = false
+        private var evaluating = false
+        private var pending = false
+        private var sent: [UUID: String] = [:]
+        private var firstID: UUID?
+        private var lastRevision = -1
+        func requestUpdate() {
+            pending = true
+            guard ready, !evaluating, let webView, let model else { return }
+            pending = false
+            guard lastRevision != model.revision else { return }
+            let reset = firstID != model.messages.first?.id
+            if reset { sent.removeAll(); firstID = model.messages.first?.id }
+            var updates: [[String: Any]] = []
+            for message in model.messages {
+                var details: [String] = []
+                if let usage = message.usage { details.append("输入 \(usage.promptTokens.formatted()) · 输出 \(usage.completionTokens.formatted()) tokens") }
+                if let cost = message.costUSD { details.append(String(format: "估算 $%.4f（不含工具费用）", cost)) }
+                if let activities = message.activities { details += activities }
+                let detail = details.joined(separator: "\n")
+                let stamp = message.text + "\u{0}" + (message.status ?? "") + detail + String(message.streaming)
+                if sent[message.id] == stamp { continue }
+                var item: [String: Any] = ["id": message.id.uuidString, "role": message.role, "text": message.text,
+                                           "streaming": message.streaming, "status": message.status ?? "", "details": detail,
+                                           "model": message.model ?? "", "mode": message.inputMode == "text" ? "PDFKit 文字" : "PDF 文件"]
+                if let quote = message.quote { item["quote"] = ["text": quote.text, "page": quote.page] }
+                if sent[message.id] == nil { item["images"] = message.images.map(\.dataURL) }
+                updates.append(item); sent[message.id] = stamp
+            }
+            let payload: [String: Any] = ["revision": model.revision, "reset": reset, "order": model.messages.map { $0.id.uuidString }, "updates": updates]
+            guard let bytes = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: bytes, encoding: .utf8) else { return }
+            lastRevision = model.revision
+            evaluating = true
+            webView.evaluateJavaScript("applyUpdate(\(json))") { [weak self] _, error in
+                guard let self else { return }
+                self.evaluating = false
+                if error != nil { self.lastRevision = -1; self.sent.removeAll() }
+                if self.pending { self.requestUpdate() }
+            }
+        }
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "ready" { ready = true; requestUpdate(); return }
+            guard let action = message.body as? [String: String], let model else { return }
+            switch action["type"] {
+            case "copy":
+                if let message = model.messages.first(where: { $0.id.uuidString == action["id"] }) {
+                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string)
                 }
-            }
-        }
-
-        private func flushQueuedHeight() {
-            if let o = endResizeObserver {
-                NotificationCenter.default.removeObserver(o)
-                endResizeObserver = nil
-            }
-            guard let h = pendingHeight else { return }
-            pendingHeight = nil
-            heightBinding?(h)
-        }
-
-        func requestRender(text: String, in webView: WKWebView) {
-            self.webView = webView
-            if !pageReady {
-                queuedText = text
-                return
-            }
-            let now = Date()
-            if now.timeIntervalSince(lastRender) >= 0.15 {
-                renderNow(text: text)
-            } else {
-                pending?.cancel()
-                let item = DispatchWorkItem { [weak self] in self?.renderNow(text: text) }
-                pending = item
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
-            }
-        }
-
-        private func renderNow(text: String) {
-            guard let webView else { return }
-            lastRender = Date()
-            // .fragmentsAllowed：允许裸 String 作为顶层 JSON 值，避免
-            // NSJSONSerialization 抛 ObjC 异常（Swift 的 try? 无法捕获 ObjC 异常会导致闪退）。
-            guard let data = try? JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed]),
-                  let json = String(data: data, encoding: .utf8) else { return }
-            webView.evaluateJavaScript("renderMarkdown(\(json))")
-        }
-
-        // MARK: WKScriptMessageHandler
-        func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
-            switch message.name {
-            case "ready":
-                pageReady = true
-                if let t = queuedText {
-                    queuedText = nil
-                    renderNow(text: t)
-                }
-            case "height":
-                if let s = message.body as? String, let d = Double(s) {
-                    heightBinding?(CGFloat(d))
-                } else if let n = message.body as? NSNumber {
-                    heightBinding?(CGFloat(n.doubleValue))
-                }
+            case "prompt": model.inputText = action["text"] ?? ""
+            case "retry": if model.messages.last?.id.uuidString == action["id"] { onRetry?() }
+            case "link":
+                guard let address = action["url"], let url = URL(string: address) else { return }
+                if url.scheme == "pdfchat", url.host == "page", let page = Int(url.lastPathComponent), page > 0 { onPage?(page) }
+                else if ["https", "http", "mailto"].contains(url.scheme ?? "") { NSWorkspace.shared.open(url) }
             default: break
             }
         }
-    }
-}
-
-/// WKWebView 子类：把滚轮事件转交给上层 ScrollView。
-/// webview 高度已精确等于内容高度，内部无需滚动，转发是安全的，
-/// 避免 WKWebView 内置 scroll view 吞掉 sidebar 的滚动。
-final class PassthroughScrollWebView: WKWebView {
-    override func scrollWheel(with event: NSEvent) {
-        nextResponder?.scrollWheel(with: event)
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(navigationAction.request.url?.isFileURL == true ? .allow : .cancel)
+        }
     }
 }

@@ -10,10 +10,15 @@ struct ChatInputTextView: NSViewRepresentable {
     var onSend: () -> Void
     var onPasteImage: (NSImage) -> Void
     var onTextChange: () -> Void
+    var onHeightChange: (CGFloat) -> Void = { _ in }
+    var focusObject: AnyObject? = nil
 
     func makeNSView(context: Context) -> NSScrollView {
         let tv = SendableTextView()
-        tv.font = .systemFont(ofSize: 13)
+        tv.font = .systemFont(ofSize: 14)
+        tv.isRichText = false
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
         tv.textColor = .labelColor
         // 背景透明 + 无聚焦环：不绘制任何自身的矩形
         tv.drawsBackground = false
@@ -29,6 +34,8 @@ struct ChatInputTextView: NSViewRepresentable {
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
         tv.delegate = context.coordinator
+        context.coordinator.textView = tv
+        context.coordinator.observeFocus()
         tv.onSend = onSend
         tv.onPasteImage = onPasteImage
 
@@ -44,6 +51,7 @@ struct ChatInputTextView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
         guard let tv = nsView.documentView as? SendableTextView else { return }
         // macOS 27 重构了 NSTextView 内部机制：输入法组字期间对文本的任何外部
         // 改写都会重置输入法会话（候选窗只剩最后一个按键、无法上屏），组字中绝不回写
@@ -56,12 +64,31 @@ struct ChatInputTextView: NSViewRepresentable {
         }
         tv.onSend = onSend
         tv.onPasteImage = onPasteImage
+        context.coordinator.measure()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: ChatInputTextView
+        var parent: ChatInputTextView
+        weak var textView: NSTextView?
+        var focusObserver: NSObjectProtocol?
+        var lastHeight: CGFloat = 0
+        deinit { if let focusObserver { NotificationCenter.default.removeObserver(focusObserver) } }
+        func observeFocus() {
+            focusObserver = NotificationCenter.default.addObserver(forName: .pdfChatFocusInput, object: nil, queue: .main) { [weak self] note in
+                guard let self, note.object as AnyObject? === self.parent.focusObject else { return }
+                self.textView?.window?.makeFirstResponder(self.textView)
+            }
+        }
+        func measure() {
+            guard let tv = textView, let layout = tv.layoutManager, let container = tv.textContainer else { return }
+            layout.ensureLayout(for: container)
+            let height = ceil(layout.usedRect(for: container).height + 24)
+            guard height != lastHeight else { return }
+            lastHeight = height
+            DispatchQueue.main.async { [weak self] in self?.parent.onHeightChange(height) }
+        }
         init(_ parent: ChatInputTextView) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
@@ -70,6 +97,7 @@ struct ChatInputTextView: NSViewRepresentable {
             guard !tv.hasMarkedText() else { return }
             parent.text = tv.string
             parent.onTextChange()
+            measure()
         }
     }
 }

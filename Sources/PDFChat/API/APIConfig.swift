@@ -31,9 +31,14 @@ struct APIConfig: Codable, Equatable {
     /// 推理强度（reasoning_effort）；nil 表示不发送该参数，由服务端取默认值。
     var reasoningEffort: String?
 
-    static func == (lhs: APIConfig, rhs: APIConfig) -> Bool {
-        lhs.baseURL == rhs.baseURL && lhs.model == rhs.model && lhs.models == rhs.models
-    }
+    // Optional fields preserve decoding of existing v1 configurations.
+    var apiStyle: APIStyle?
+    var toolsEnabled: Bool?
+    var webEnabled: Bool?
+    var visionEnabled: Bool?
+    var includeUsage: Bool?
+    var resolvedStyle: APIStyle { apiStyle ?? .chatCompletions }
+
 }
 
 struct ModelPrice: Codable, Equatable {
@@ -46,15 +51,12 @@ extension APIConfig {
         baseURL: "https://api.deepseek.com/v1",
         model: "deepseek-chat",
         models: ["deepseek-chat", "deepseek-reasoner"],
-        pricing: [
-            "deepseek-chat":   .init(inputPerMillion: 0.27, outputPerMillion: 1.10),
-            "deepseek-reasoner": .init(inputPerMillion: 0.55, outputPerMillion: 2.19)
-        ],
+        pricing: [:],
         maxContexts: [
             "deepseek-chat": 65536,
             "deepseek-reasoner": 65536
         ],
-        reasoningEffort: "high"
+        reasoningEffort: nil
     )
 }
 
@@ -84,41 +86,82 @@ enum ReasoningEffort: String, CaseIterable, Identifiable {
     }
 }
 
-/// 全局设置：负责把非密配置存 UserDefaults，apiKey 存 Keychain。
+enum APIStyle: String, Codable, CaseIterable, Identifiable {
+    case chatCompletions, responses
+    var id: String { rawValue }
+    var label: String { self == .responses ? "Responses" : "Chat Completions（兼容接口）" }
+}
+
+struct ConnectionProfile: Codable, Identifiable {
+    var id: String
+    var name: String
+    var config: APIConfig
+}
+
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
-
     @Published var config: APIConfig
-
+    @Published var profiles: [ConnectionProfile]
+    @Published var activeProfileID: String
     private let defaults = UserDefaults.standard
-    private let configKey = "APIConfig.v1"
 
     private init() {
-        if let data = UserDefaults.standard.data(forKey: "APIConfig.v1"),
-           let decoded = try? JSONDecoder().decode(APIConfig.self, from: data) {
-            config = decoded
-        } else {
-            config = .default
-        }
+        let saved = UserDefaults.standard.data(forKey: "Connections.v2")
+            .flatMap { try? JSONDecoder().decode([ConnectionProfile].self, from: $0) }
+        let legacy = UserDefaults.standard.data(forKey: "APIConfig.v1")
+            .flatMap { try? JSONDecoder().decode(APIConfig.self, from: $0) } ?? .default
+        let loaded = saved?.isEmpty == false ? saved! : [.init(id: "default", name: "默认连接", config: legacy)]
+        profiles = loaded
+        let wanted = UserDefaults.standard.string(forKey: "ActiveConnection.v2") ?? "default"
+        let active = loaded.first { $0.id == wanted } ?? loaded[0]
+        activeProfileID = active.id
+        config = active.config
     }
 
+    var connectionName: String { profiles.first { $0.id == activeProfileID }?.name ?? "自定义连接" }
     var apiKey: String {
-        get { KeychainStore.get("default") ?? "" }
-        set { KeychainStore.set(newValue, for: "default") }
+        get { KeychainStore.get(activeProfileID) ?? "" }
+        set { KeychainStore.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: activeProfileID) }
     }
-
+    var searchKey: String {
+        get { KeychainStore.get("brave-search") ?? "" }
+        set { KeychainStore.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: "brave-search") }
+    }
     func save() {
-        if let data = try? JSONEncoder().encode(config) {
-            defaults.set(data, forKey: configKey)
-        }
+        if let i = profiles.firstIndex(where: { $0.id == activeProfileID }) { profiles[i].config = config }
+        if let data = try? JSONEncoder().encode(profiles) { defaults.set(data, forKey: "Connections.v2") }
+        defaults.set(activeProfileID, forKey: "ActiveConnection.v2")
     }
-
+    func select(_ id: String) {
+        save()
+        guard let profile = profiles.first(where: { $0.id == id }) else { return }
+        activeProfileID = id
+        config = profile.config
+        save()
+    }
+    func addConnection() {
+        save()
+        let profile = ConnectionProfile(id: UUID().uuidString, name: "新连接", config: .default)
+        profiles.append(profile)
+        activeProfileID = profile.id
+        config = profile.config
+        save()
+    }
+    func rename(_ name: String) {
+        if let i = profiles.firstIndex(where: { $0.id == activeProfileID }) { profiles[i].name = name }
+        save()
+    }
+    func removeConnection() {
+        guard profiles.count > 1 else { return }
+        KeychainStore.remove(activeProfileID)
+        profiles.removeAll { $0.id == activeProfileID }
+        activeProfileID = profiles[0].id
+        config = profiles[0].config
+        save()
+    }
     func price(for model: String) -> ModelPrice {
         config.pricing[model] ?? .init(inputPerMillion: 0, outputPerMillion: 0)
     }
-
-    func maxContext(for model: String) -> Int {
-        config.maxContexts[model] ?? 128_000
-    }
+    func maxContext(for model: String) -> Int { config.maxContexts[model] ?? 128_000 }
 }

@@ -15,6 +15,8 @@ mkdir -p "$APP/Contents/Resources"
 cp "$BUILD/PDFChat" "$APP/Contents/MacOS/PDFChat"
 cp Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp -R "$BUILD/PDFChat_PDFChat.bundle" "$APP/Contents/Resources/"
+
 printf "APPLPDFC" > "$APP/Contents/PkgInfo"
 
 chmod +x "$APP/Contents/MacOS/PDFChat"
