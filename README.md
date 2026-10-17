@@ -4,13 +4,15 @@ A focused native macOS PDF reader with a configurable LLM sidebar. Read the PDF,
 
 ## Reading and chatting
 
-- **Complete PDF by default.** The input card selects **PDF 文件** on opening a document. Each request includes the original PDF bytes as a file input, including visual content. Nothing is uploaded merely by opening a PDF: sending a question starts the request.
-- **Explicit text alternative.** Click **PDFKit 文字** to extract and send the complete text with physical page markers. This is useful for text-heavy long documents and providers without PDF support. The app checks an estimated text/context budget and never silently truncates or silently switches modes. Scanned PDFs without extractable text produce an actionable message.
-- **Composer controls.** Document mode sits alongside the image and prompt buttons in the input card's bottom toolbar, leaving its upper area available for typing. The current **思考** (reasoning effort) setting is directly accessible below the card; the selected connection remembers it. Non-default efforts require model support.
-- **Quotes stay pinned.** Select text and choose 提问, 解释, or 翻译. The quoted text and physical page number appear above the composer and are saved with the question. Changing the selection or turning a page does not change the pinned quote. The quote accompanies the selected full-document input mode.
+- **Complete PDF by default.** The input card selects **PDF File** on opening a document. Each request includes the original PDF bytes as a file input, including visual content. Nothing is uploaded merely by opening a PDF: sending a question starts the request.
+- **Explicit text alternative.** Click **PDFKit Text** to extract and send the complete text with physical page markers. This is useful for text-heavy long documents and providers without PDF support. The app checks an estimated text/context budget and never silently truncates or silently switches modes. Scanned PDFs without extractable text produce an actionable message.
+- **Composer controls.** Document mode sits alongside the image and prompt buttons in the input card's bottom toolbar, leaving its upper area available for typing. The current **Think** (reasoning effort) setting is directly accessible below the card; the selected connection remembers it. Non-default efforts require model support.
+- **Quotes stay pinned.** Select text and choose Ask, Explain, or Translate. The quoted text and physical page number appear above the composer and are saved with the question. Changing the selection or turning a page does not change the pinned quote. The quote accompanies the selected full-document input mode.
 - **Read comfortably.** Search (`⌘F`, Enter to run), page navigation, document outline, fit width, zoom, and per-document page/zoom restoration. Drag the visible 12-point divider to resize the sidebar; it can also receive focus and use the left/right arrow keys.
 - **Images.** Paste an image or use the `+` menu to pick an image or attach the current PDF page screenshot.
 - **Conversation history.** Local automatic persistence, one history collection per PDF content hash. Moving or renaming an unchanged PDF preserves its history. Existing path-based histories migrate automatically. History includes quotes, model labels, input mode, tool progress, and reported usage.
+
+The interface is in English. User messages have no role heading; copy icons appear below messages on hover or keyboard focus without shifting the conversation. Existing conversations and custom prompts keep their original text. Unmodified built-in prompts migrate to English.
 
 ## Connections
 
@@ -23,15 +25,15 @@ Choose the protocol your endpoint actually implements:
 | Chat Completions | `file` content with base64 PDF; provider/model must support it | Function calls executed by PDFChat | Brave Search key + web tools |
 | Responses | `input_file` with base64 PDF; provider/model must support it | Function calls executed by PDFChat | Provider-hosted `web_search`; provider must support it |
 
-An “OpenAI-compatible” URL does **not** guarantee PDF, vision, reasoning, or tool support. Provider errors are shown with their details and a retry button; switch explicitly to **PDFKit 文字** if file input is rejected. The app has a conservative 50 MB PDF guard; providers may impose lower limits. PDF page images also consume context and tokens. Full text mode cannot make a document larger than the model's context fit automatically.
+An “OpenAI-compatible” URL does **not** guarantee PDF, vision, reasoning, or tool support. Provider errors are shown with their details and a retry button; switch explicitly to **PDFKit Text** if file input is rejected. The app has a conservative 50 MB PDF guard; providers may impose lower limits. PDF page images also consume context and tokens. Full text mode cannot make a document larger than the model's context fit automatically.
 
-Use **获取模型列表** to query `/models`, or enter a model ID manually. **测试连接** sends a small text request to the selected model (provider usage may be charged); it verifies basic connectivity, not every optional capability. Local endpoints can use an empty API key. Leave reasoning at 默认 unless the model supports the selected effort value. Turn off streamed usage if a compatible provider rejects `stream_options`.
+Use **Fetch models** to query `/models`, or enter a model ID manually. **Test connection** sends a small text request to the selected model (provider usage may be charged); it verifies basic connectivity, not every optional capability. Local endpoints can use an empty API key. Leave reasoning at Default unless the model supports the selected effort value. Turn off streamed usage if a compatible provider rejects `stream_options`.
 
 For official `opencode.ai` endpoints, PDFChat automatically sends a stable `x-opencode-session` per conversation and identifies itself as `PDFChat/<version>`. The session survives follow-up questions, retries, tool rounds, and history restoration; new conversations use a different ID. Connection tests and model-list requests also carry routing headers. This addresses OpenCode's missing-session HTTP 400 without changing PDF/text mode. [OpenCode Go's client requirements](https://opencode.ai/docs/go/#where-can-i-use-it) target coding-agent traffic; routing-header support does not establish that Go supports general PDF reading, a particular model's file inputs, or every optional capability.
 
 ## Reading tools
 
-Document tools are enabled by default. Network access is opt-in using the sidebar's 阅读工具 menu or Settings → 工具.
+Document tools are enabled by default. Network access is opt-in using the sidebar's Tools menu or Settings → Tools.
 
 - `search_pdf`: find text and physical page references in the current PDF.
 - `read_pdf_page`: read a page's extracted text.
@@ -46,7 +48,7 @@ PDF citations use `[第 N 页](pdfchat://page/N)` and navigate to physical PDF p
 
 ## Rendering and responsiveness
 
-The transcript uses one local WebView with incremental message updates, independent scrolling, and bundled Markdown/KaTeX resources. No CDN scripts are fetched at runtime. Completed messages are not re-rendered for each new token. Selecting answer text preserves the selection; scrolling upward pauses following until you return to the bottom or click 回到最新. Streaming is batched, pending text is flushed on stop, and superseded requests cannot update a newer conversation. Markdown HTML is sanitized and external image loading is disabled.
+The transcript uses one local WebView with incremental message updates, independent scrolling, and bundled Markdown/KaTeX resources. No CDN scripts are fetched at runtime. Completed messages are not re-rendered for each new token. Selecting answer text preserves the selection; scrolling upward pauses following until you return to the bottom or click Back to latest. Streaming is batched, pending text is flushed on stop, and superseded requests cannot update a newer conversation. Markdown HTML is sanitized and external image loading is disabled.
 
 PDF text extraction, image rendering, hashing, and base64 preparation use a separate document reader. History encoding/writes run on a serial background queue; normal application quit drains pending writes. A forced process kill can still lose an unfinished response.
 

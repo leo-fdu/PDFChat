@@ -105,7 +105,7 @@ final class ChatViewModel: ObservableObject {
             return .init(role: message.role, text: text, images: message.images)
         }
         messages.append(ChatMessage(id: assistantID, role: "assistant", text: "", images: [], streaming: true, model: config.model, status: "preparing"))
-        isStreaming = true; error = nil; activity = reader == nil ? "正在连接" : "正在准备\(mode.label)"
+        isStreaming = true; error = nil; activity = reader == nil ? "Connecting" : "Preparing \(mode.label)"
         revision += 1
         save()
         streamTask = Task { [weak self] in
@@ -117,9 +117,9 @@ final class ChatViewModel: ObservableObject {
                 if let text = document?.text, !text.isEmpty {
                     let estimated = TokenEstimator.estimate(text + history.map(\.text).joined())
                     let limit = config.maxContexts[config.model] ?? 128_000
-                    guard estimated < limit - min(4096, limit / 8) else { throw ChatError.configuration("文字与对话估计约 \(estimated.formatted()) tokens，接近或超过当前模型上限 \(limit.formatted())。请切换更大上下文模型或开启新对话；没有截断原文。") }
+                    guard estimated < limit - min(4096, limit / 8) else { throw ChatError.configuration("Document and chat use an estimated \(estimated.formatted()) tokens, near or above the \(limit.formatted()) context limit. Choose a larger-context model or start a new chat. The document has not been truncated.") }
                 }
-                self.activity = "等待模型响应"
+                self.activity = "Waiting for response"
                 let system = Self.systemPrompt + (document?.text.isEmpty == false ? "\n\n以下是 PDFKit 提取的完整文字：\n" + document!.text : "")
                 let client = OpenAIClient(config: config, apiKey: key, conversationSessionID: conversationSessionID)
                 try await client.streamChat(system: system, messages: history, pdf: document?.pdf, tools: tools,
@@ -129,7 +129,7 @@ final class ChatViewModel: ObservableObject {
                     let allowed = tools.contains { entry in
                         (entry["name"] as? String ?? (entry["function"] as? [String: Any])?["name"] as? String) == call.name
                     }
-                    guard allowed else { return .init(text: "该工具未在本次请求中启用。") }
+                    guard allowed else { return .init(text: "This tool was not enabled for this request.") }
                     return try await toolRunner.execute(call)
                 }, onEvent: { [weak self] event in
                     self?.receive(event, run: id, assistant: assistantID, price: config.pricing[config.model])
@@ -151,7 +151,7 @@ final class ChatViewModel: ObservableObject {
         switch event {
         case .text(let delta):
             pendingText += delta
-            activity = "正在回答"
+            activity = "Generating response"
             if flushTask == nil {
                 flushTask = Task { [weak self] in
                     try? await Task.sleep(nanoseconds: 70_000_000)
@@ -187,7 +187,7 @@ final class ChatViewModel: ObservableObject {
         flush(run: run, assistant: assistant)
         if let index = messages.firstIndex(where: { $0.id == assistant }) {
             messages[index].streaming = false; messages[index].status = status
-            if status == "error" { messages[index].text += "\n\n" + (error ?? "请求失败") }
+            if status == "error" { messages[index].text += "\n\n" + (error ?? "Request failed") }
         }
         runID = nil; activeAssistant = nil; isStreaming = false; activity = ""; streamTask = nil
         revision += 1; save()

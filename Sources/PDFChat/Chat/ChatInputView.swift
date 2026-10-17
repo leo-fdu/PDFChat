@@ -17,7 +17,7 @@ struct ChatInputView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Rectangle().fill(.tint).frame(width: 3)
                     VStack(alignment: .leading, spacing: 4) {
-                        Button("引用 · 第 \(quote.page) 页") { contextStore.goToPage(quote.page) }.buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
+                        Button("Quote · Page \(quote.page)") { contextStore.goToPage(quote.page) }.buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
                         Text(quote.text).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(quoteExpanded ? 12 : 2)
                             .onTapGesture { quoteExpanded.toggle() }
                     }
@@ -39,7 +39,7 @@ struct ChatInputView: View {
             }
             ZStack(alignment: .topLeading) {
                 if viewModel.inputText.isEmpty {
-                    Text(contextStore.quote == nil ? "就这份 PDF 提问…" : "想了解这段内容的什么？")
+                    Text(contextStore.quote == nil ? "Ask about this PDF…" : "What would you like to know about this passage?")
                         .font(.system(size: 14)).foregroundStyle(.tertiary).padding(.leading, 13).padding(.top, 12).allowsHitTesting(false)
                 }
                 ChatInputTextView(text: $viewModel.inputText,
@@ -58,27 +58,27 @@ struct ChatInputView: View {
             }
             HStack(spacing: 8) {
                 Menu {
-                    Button("添加图片…") { showImages = true }
-                    Button("附加当前 PDF 页截图") { addPageImage() }.disabled(contextStore.reader == nil || preparingImage)
-                } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize().help("添加图片或页面截图")
+                    Button("Add image…") { showImages = true }
+                    Button("Attach current page image") { addPageImage() }.disabled(contextStore.reader == nil || preparingImage)
+                } label: { Image(systemName: "plus") }.menuStyle(.borderlessButton).fixedSize().help("Add an image or page screenshot")
                 Menu {
                     ForEach(slashStore.presets) { prompt in Button(prompt.trigger) { viewModel.inputText = prompt.content } }
-                } label: { Image(systemName: "text.badge.star") }.menuStyle(.borderlessButton).fixedSize().help("快捷提示词")
-                Picker("文档发送方式", selection: $contextStore.mode) {
-                    Text("PDF 文件").tag(DocumentInputMode.pdf)
-                    Text("PDFKit 文字").tag(DocumentInputMode.text)
+                } label: { Image(systemName: "text.badge.star") }.menuStyle(.borderlessButton).fixedSize().help("Prompts")
+                Picker("Document input", selection: $contextStore.mode) {
+                    Text("PDF File").tag(DocumentInputMode.pdf)
+                    Text("PDFKit Text").tag(DocumentInputMode.text)
                 }
                 .pickerStyle(.segmented).labelsHidden().controlSize(.small)
                 .frame(maxWidth: 180)
-                .help("PDF 文件：发送完整文件，需服务商支持。PDFKit 文字：提取全文后发送，适合文字为主的长文档。")
+                .help("PDF File sends the full document and requires provider support. PDFKit Text extracts the full text, ideal for long text-heavy documents.")
                 .disabled(viewModel.isStreaming)
                 if preparingImage { ProgressView().controlSize(.mini) }
                 Spacer(minLength: 0)
                 if viewModel.isStreaming {
-                    Button { viewModel.stop() } label: { Image(systemName: "stop.fill").frame(width: 22, height: 22) }.buttonStyle(.borderedProminent).help("停止生成")
+                    Button { viewModel.stop() } label: { Image(systemName: "stop.fill").frame(width: 22, height: 22) }.buttonStyle(.borderedProminent).help("Stop generating")
                 } else {
                     Button { viewModel.send(contextStore: contextStore) } label: { Image(systemName: "arrow.up").fontWeight(.semibold).frame(width: 22, height: 22) }
-                        .buttonStyle(.borderedProminent).help("发送（Return）；Shift+Return 换行")
+                        .buttonStyle(.borderedProminent).help("Send (Return); Shift+Return for a new line")
                         .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && viewModel.pendingImages.isEmpty)
                 }
             }.foregroundStyle(.secondary).padding(.horizontal, 12).padding(.bottom, 10)
@@ -89,7 +89,7 @@ struct ChatInputView: View {
         .fileImporter(isPresented: $showImages, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result, let image = NSImage(contentsOf: url) { handleImage(image) }
         }
-        .alert("图片处理失败", isPresented: Binding(get: { imageError != nil }, set: { if !$0 { imageError = nil } })) { Button("好") {} } message: { Text(imageError ?? "") }
+        .alert("Image processing failed", isPresented: Binding(get: { imageError != nil }, set: { if !$0 { imageError = nil } })) { Button("OK") {} } message: { Text(imageError ?? "") }
     }
     private func handleImage(_ image: NSImage) {
         guard let dataURL = ImageCoding.dataURL(from: image), let tiff = image.tiffRepresentation,
@@ -106,7 +106,7 @@ struct ChatInputView: View {
                 let dataURL = try await reader.pageImage(page)
                 let data = dataURL.split(separator: ",", maxSplits: 1).last.flatMap { Data(base64Encoded: String($0)) }
                 viewModel.addImage(.init(dataURL: dataURL, thumbData: data))
-                if viewModel.inputText.isEmpty { viewModel.inputText = "请解释第 \(page) 页的这张图。" }
+                if viewModel.inputText.isEmpty { viewModel.inputText = "Please explain this image from page \(page)." }
             } catch { imageError = error.localizedDescription }
         }
     }

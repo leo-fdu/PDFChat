@@ -23,16 +23,16 @@ struct PresetPromptsView: View {
             Divider()
             VStack(spacing: 6) {
                 HStack {
-                    TextField("触发词（如 总结）", text: $newTrigger)
+                    TextField("Shortcut (e.g. summarize)", text: $newTrigger)
                         .textFieldStyle(.roundedBorder)
                     Button {
                         add()
                     } label: {
-                        Label("添加", systemImage: "plus")
+                        Label("Add", systemImage: "plus")
                     }
                     .disabled(newTrigger.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
-                TextField("提示词内容", text: $newContent, axis: .vertical)
+                TextField("Prompt content", text: $newContent, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(2...4)
             }
@@ -59,7 +59,7 @@ struct PresetPromptsView: View {
         if let idx = store.presets.firstIndex(where: { $0.trigger == t }) {
             store.presets[idx].content = c
         } else {
-            store.presets.append(.init(trigger: t, content: c.isEmpty ? "（待填写）" : c))
+            store.presets.append(.init(trigger: t, content: c.isEmpty ? "(Add prompt content)" : c))
         }
         store.save()
         newTrigger = ""

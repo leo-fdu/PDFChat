@@ -13,7 +13,7 @@ struct ChatSidebarView: View {
             HStack(spacing: 10) {
                 Image(systemName: "sparkle").foregroundStyle(.tint).font(.system(size: 19))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("阅读助手").font(.system(size: 14, weight: .semibold))
+                    Text("Reading Assistant").font(.system(size: 14, weight: .semibold))
                     Menu {
                         ForEach(settings.profiles) { profile in
                             Button(profile.name) { settings.select(profile.id) }
@@ -25,18 +25,18 @@ struct ChatSidebarView: View {
                             }
                         }
                         Divider()
-                        Button("管理连接…") { openSettings() }
+                        Button("Manage connections…") { openSettings() }
                     } label: {
-                        Text(settings.config.model.isEmpty ? "选择模型" : settings.config.model).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(settings.config.model.isEmpty ? "Choose model" : settings.config.model).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                     }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true).disabled(viewModel.isStreaming)
                 }
                 Spacer(minLength: 8)
-                Button { showHistory.toggle() } label: { Image(systemName: "clock.arrow.circlepath") }.help("此 PDF 的对话历史")
+                Button { showHistory.toggle() } label: { Image(systemName: "clock.arrow.circlepath") }.help("Conversation history for this PDF")
                     .popover(isPresented: $showHistory) {
                         HistoryListView(history: historyStore, model: viewModel, dismiss: { showHistory = false }).frame(width: 340, height: 380)
                     }
-                Button { viewModel.newConversation() } label: { Image(systemName: "square.and.pencil") }.help("新对话（⌘N）")
-                Button { openSettings() } label: { Image(systemName: "slider.horizontal.3") }.help("连接与偏好设置")
+                Button { viewModel.newConversation() } label: { Image(systemName: "square.and.pencil") }.help("New chat (⌘N)")
+                Button { openSettings() } label: { Image(systemName: "slider.horizontal.3") }.help("Connections and preferences")
             }.buttonStyle(.borderless).padding(.horizontal, 18).padding(.vertical, 15)
             Divider().opacity(0.6)
             MessageListView(viewModel: viewModel, contextStore: contextStore)
@@ -51,17 +51,17 @@ struct ChatSidebarView: View {
                 .padding(.horizontal, 14).padding(.bottom, 10)
             HStack(spacing: 8) {
                 Menu {
-                    Toggle("允许文档工具", isOn: configBinding(\.toolsEnabled, fallback: true))
-                    Toggle("允许联网", isOn: configBinding(\.webEnabled, fallback: false))
-                    Toggle("允许页面图像工具", isOn: configBinding(\.visionEnabled, fallback: true))
+                    Toggle("Enable document tools", isOn: configBinding(\.toolsEnabled, fallback: true))
+                    Toggle("Enable web access", isOn: configBinding(\.webEnabled, fallback: false))
+                    Toggle("Enable page images", isOn: configBinding(\.visionEnabled, fallback: true))
                     Divider()
-                    Button("配置网络搜索…") { openSettings() }
+                    Button("Configure web search…") { openSettings() }
                 } label: {
-                    Label(settings.config.webEnabled == true ? "工具 · 联网已开" : "阅读工具", systemImage: settings.config.webEnabled == true ? "globe" : "wrench.and.screwdriver")
+                    Label(settings.config.webEnabled == true ? "Tools · Web on" : "Tools", systemImage: settings.config.webEnabled == true ? "globe" : "wrench.and.screwdriver")
                         .font(.system(size: 11))
                 }.menuStyle(.borderlessButton).fixedSize().disabled(viewModel.isStreaming)
                 Menu {
-                    Picker("思考强度", selection: Binding(
+                    Picker("Reasoning effort", selection: Binding(
                         get: { ReasoningEffort(string: settings.config.reasoningEffort) },
                         set: { settings.config.reasoningEffort = $0 == .unset ? nil : $0.rawValue; settings.save() }
                     )) {
@@ -70,22 +70,22 @@ struct ChatSidebarView: View {
                         }
                     }.pickerStyle(.inline)
                 } label: {
-                    Text("思考 · \(ReasoningEffort(string: settings.config.reasoningEffort).label)")
+                    Text("Think · \(ReasoningEffort(string: settings.config.reasoningEffort).label)")
                         .font(.system(size: 11)).lineLimit(1)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
-                .help("调整下一次请求的思考强度；默认使用服务商设置，其他档位需要模型支持。")
-                .accessibilityLabel("思考强度")
+                .help("Set reasoning effort for the next request. Default uses the provider setting; other levels require model support.")
+                .accessibilityLabel("Reasoning effort")
                 .accessibilityValue(ReasoningEffort(string: settings.config.reasoningEffort).label)
                 .disabled(viewModel.isStreaming)
                 Spacer()
-                Button { showStats.toggle() } label: { Image(systemName: "chart.bar.xaxis") }.buttonStyle(.plain).help("会话用量")
+                Button { showStats.toggle() } label: { Image(systemName: "chart.bar.xaxis") }.buttonStyle(.plain).help("Session usage")
                     .popover(isPresented: $showStats) {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("会话用量").font(.headline)
-                            Text("输入 \(viewModel.sessionPromptTokens.formatted()) · 输出 \(viewModel.sessionCompletionTokens.formatted()) tokens")
-                            Text(settings.config.pricing[settings.config.model] == nil ? "当前模型未配置价格" : String(format: "模型费用估算 $%.4f", viewModel.sessionCost))
-                            Text("依赖服务商返回的用量；不包含联网搜索等工具费用。") .font(.caption).foregroundStyle(.secondary)
+                            Text("Session usage").font(.headline)
+                            Text("Input \(viewModel.sessionPromptTokens.formatted()) · Output \(viewModel.sessionCompletionTokens.formatted()) tokens")
+                            Text(settings.config.pricing[settings.config.model] == nil ? "No pricing configured for this model" : String(format: "Estimated model cost $%.4f", viewModel.sessionCost))
+                            Text("Based on provider-reported usage. Excludes web search and other tool fees.") .font(.caption).foregroundStyle(.secondary)
                         }.padding(18).frame(width: 290)
                     }
             }.padding(.horizontal, 18).padding(.bottom, 12)
@@ -102,9 +102,9 @@ private struct HistoryListView: View {
     var dismiss: () -> Void
     var body: some View {
         VStack(alignment: .leading) {
-            Text("这份 PDF 的对话").font(.headline).padding(16)
+            Text("Conversations for this PDF").font(.headline).padding(16)
             if history.conversations.isEmpty {
-                ContentUnavailableView("还没有历史对话", systemImage: "bubble.left.and.bubble.right", description: Text("对话会自动保存在这台 Mac 上。"))
+                ContentUnavailableView("No conversations yet", systemImage: "bubble.left.and.bubble.right", description: Text("Conversations are saved automatically on this Mac."))
             } else {
                 List(history.conversations) { conversation in
                     HStack {
@@ -120,7 +120,7 @@ private struct HistoryListView: View {
                         Button {
                             if history.currentConversationID == conversation.id { model.newConversation() }
                             history.delete(conversation)
-                        } label: { Image(systemName: "trash").foregroundStyle(.secondary) }.buttonStyle(.borderless).help("删除对话")
+                        } label: { Image(systemName: "trash").foregroundStyle(.secondary) }.buttonStyle(.borderless).help("Delete conversation")
                     }.padding(.vertical, 5)
                 }.listStyle(.plain)
             }

@@ -57,7 +57,7 @@ final class APIRegressionTests: XCTestCase {
         let tools = ReadingTools(reader: nil, webEnabled: false, searchKey: "", visionEnabled: false)
         XCTAssertTrue(tools.definitions(style: .responses).isEmpty)
         let result = try await tools.execute(.init(id: "bad", name: "shell", arguments: "{}"))
-        XCTAssertTrue(result.text.contains("未知"))
+        XCTAssertTrue(result.text.contains("unknown"))
         for url in ["file:///etc/passwd", "http://127.0.0.1", "http://192.168.1.1", "https://user:pass@example.com", "http://localhost"] {
             XCTAssertFalse(ReadingTools.isPublicWebURL(URL(string: url)!))
         }
@@ -85,7 +85,7 @@ final class PDFReaderTests: XCTestCase {
         XCTAssertTrue(file.text.isEmpty)
         let text = try await reader.prepare(mode: .text)
         XCTAssertNil(text.pdf)
-        XCTAssertTrue(text.text.contains("[第 3 页]"))
+        XCTAssertTrue(text.text.contains("[Page 3]"))
         XCTAssertTrue(text.text.contains("Select this paragraph"))
         let results = try await reader.search("synthetic chart")
         XCTAssertTrue(results.contains("pdfchat://page/1"))
@@ -95,7 +95,7 @@ final class PDFReaderTests: XCTestCase {
         let page = try await tool.execute(.init(id: "page", name: "read_pdf_page", arguments: "{\"page\":2}"))
         XCTAssertTrue(page.text.contains("Page 2 / 3"))
         let invalid = try await tool.execute(.init(id: "page", name: "read_pdf_page", arguments: "{\"page\":99}"))
-        XCTAssertTrue(invalid.text.contains("超出范围"))
+        XCTAssertTrue(invalid.text.contains("out of range"))
     }
     func testHistoryIdentitySurvivesRename() async throws {
         let data = try Data(contentsOf: fixtureURL())

@@ -13,7 +13,7 @@ enum ProviderPresets {
         .init(name: "OpenAI",   baseURL: "https://api.openai.com/v1",            defaultModel: "gpt-4o-mini"),
         .init(name: "DeepSeek", baseURL: "https://api.deepseek.com/v1",         defaultModel: "deepseek-chat"),
         .init(name: "Moonshot", baseURL: "https://api.moonshot.cn/v1",          defaultModel: "moonshot-v1-8k"),
-        .init(name: "智谱 GLM",  baseURL: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "glm-4-flash"),
+        .init(name: "Zhipu GLM",  baseURL: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "glm-4-flash"),
         .init(name: "SiliconFlow", baseURL: "https://api.siliconflow.cn/v1",    defaultModel: "Qwen/Qwen2.5-7B-Instruct")
     ]
 }
@@ -72,11 +72,11 @@ enum ReasoningEffort: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .unset: return "默认"
-        case .low: return "低"
-        case .medium: return "中"
-        case .high: return "高"
-        case .max: return "最高"
+        case .unset: return "Default"
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .max: return "Max"
         }
     }
 
@@ -89,7 +89,7 @@ enum ReasoningEffort: String, CaseIterable, Identifiable {
 enum APIStyle: String, Codable, CaseIterable, Identifiable {
     case chatCompletions, responses
     var id: String { rawValue }
-    var label: String { self == .responses ? "Responses" : "Chat Completions（兼容接口）" }
+    var label: String { self == .responses ? "Responses" : "Chat Completions (compatible)" }
 }
 
 struct ConnectionProfile: Codable, Identifiable {
@@ -111,7 +111,11 @@ final class AppSettings: ObservableObject {
             .flatMap { try? JSONDecoder().decode([ConnectionProfile].self, from: $0) }
         let legacy = UserDefaults.standard.data(forKey: "APIConfig.v1")
             .flatMap { try? JSONDecoder().decode(APIConfig.self, from: $0) } ?? .default
-        let loaded = saved?.isEmpty == false ? saved! : [.init(id: "default", name: "默认连接", config: legacy)]
+        var loaded = saved?.isEmpty == false ? saved! : [.init(id: "default", name: "Default connection", config: legacy)]
+        // Translate only the original generated name, preserving user-named connections.
+        if let index = loaded.firstIndex(where: { $0.id == "default" && $0.name == "默认连接" }) {
+            loaded[index].name = "Default connection"
+        }
         profiles = loaded
         let wanted = UserDefaults.standard.string(forKey: "ActiveConnection.v2") ?? "default"
         let active = loaded.first { $0.id == wanted } ?? loaded[0]
@@ -119,7 +123,7 @@ final class AppSettings: ObservableObject {
         config = active.config
     }
 
-    var connectionName: String { profiles.first { $0.id == activeProfileID }?.name ?? "自定义连接" }
+    var connectionName: String { profiles.first { $0.id == activeProfileID }?.name ?? "Custom connection" }
     var apiKey: String {
         get { KeychainStore.get(activeProfileID) ?? "" }
         set { KeychainStore.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), for: activeProfileID) }
@@ -142,7 +146,7 @@ final class AppSettings: ObservableObject {
     }
     func addConnection() {
         save()
-        let profile = ConnectionProfile(id: UUID().uuidString, name: "新连接", config: .default)
+        let profile = ConnectionProfile(id: UUID().uuidString, name: "New connection", config: .default)
         profiles.append(profile)
         activeProfileID = profile.id
         config = profile.config

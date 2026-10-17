@@ -53,7 +53,7 @@ final class TransportTests: XCTestCase {
         do {
             try await OpenAIClient(config: config, apiKey: "fixture").streamChat(system: "", messages: [.init(role: "user", text: "hi")], pdf: nil, tools: [], nativeWeb: false, execute: { _ in .init(text: "") }, onEvent: { _ in })
             XCTFail("Expected incomplete stream")
-        } catch { XCTAssertTrue(error.localizedDescription.contains("中断")) }
+        } catch { XCTAssertTrue(error.localizedDescription.contains("interrupted")) }
     }
     @MainActor
     func testCancelledRequestCannotCorruptNewConversation() async throws {

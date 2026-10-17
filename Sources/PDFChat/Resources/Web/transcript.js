@@ -20,27 +20,29 @@ function renderText(element, text, streaming) {
 }
 function createMessage(m) {
     const el=document.createElement('article'); el.className='message '+m.role;
-    el.innerHTML='<div class="role"></div><div class="quote" hidden></div><div class="images"></div><div class="content"></div><div class="pending" hidden>等待模型响应</div><div class="actions"><button class="copy">复制</button><button class="retry" hidden>重试</button><span class="state"></span></div><details hidden><summary>用量与工具过程</summary><pre></pre></details>';
+    el.setAttribute('aria-label',m.role==='user'?'Your message':'Assistant response');
+    el.innerHTML=(m.role==='user'?'':'<div class="role"></div>')+'<div class="bubble"><div class="quote" hidden></div><div class="images"></div><div class="content"></div><div class="pending" hidden>Waiting for response</div></div><div class="actions"><button class="copy" aria-label="Copy message" title="Copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="8" y="3" width="13" height="14" rx="3"/><path d="M16 17v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h3"/></svg></button><button class="retry" hidden>Retry</button><span class="state"></span></div><details hidden><summary>Usage and tool activity</summary><pre></pre></details>';
     el.querySelector('.copy').onclick=()=>bridge({type:'copy',id:m.id});
     el.querySelector('.retry').onclick=()=>bridge({type:'retry',id:m.id});
     nodes.set(m.id,el); return el;
 }
 function updateMessage(m) {
     const el=nodes.get(m.id) || createMessage(m);
-    el.querySelector('.role').textContent=m.role==='user' ? '你'+(m.mode?' · '+m.mode:'') : (m.model||'阅读助手');
+    const role=el.querySelector('.role');
+    if(role) role.textContent=m.model||'Reading Assistant';
     const content=el.querySelector('.content');
     if(el._text!==m.text || el._streaming!==m.streaming) {
         const applied=m.role==='user' ? (content.textContent=m.text,true) : renderText(content,m.text,m.streaming);
         if(applied) { el._text=m.text; el._streaming=m.streaming; }
     }
     const quote=el.querySelector('.quote'); quote.hidden=!m.quote;
-    if(m.quote) quote.textContent='第 '+m.quote.page+' 页 · '+m.quote.text;
+    if(m.quote) quote.textContent='Page '+m.quote.page+' · '+m.quote.text;
     if(m.images && !el._images) {
         for(const src of m.images) { if(!src.startsWith('data:image/')) continue; const img=document.createElement('img'); img.src=src; el.querySelector('.images').append(img); }
         el._images=true;
     }
     el.querySelector('.pending').hidden=!(m.streaming && !m.text);
-    el.querySelector('.state').textContent=m.status==='stopped'?'已停止':m.status==='error'?'请求失败':m.streaming?'生成中':'';
+    el.querySelector('.state').textContent=m.status==='stopped'?'Stopped':m.status==='error'?'Request failed':m.streaming?'Generating':'';
     el.querySelector('.state').classList.toggle('error',m.status==='error');
     el.querySelector('.retry').hidden=m.status!=='error';
     const details=el.querySelector('details'); details.hidden=!m.details;
@@ -55,7 +57,7 @@ function applyUpdate(payload) {
     updateInFlight=true;
     if(payload.reset) { root.replaceChildren(); nodes.clear(); data.clear(); following=true; }
     if(payload.order.length===0) {
-        root.innerHTML='<div class="empty"><div class="symbol">✦</div><h2>读到这里，聊一聊</h2><p>默认发送完整 PDF，图表与文字一起理解。<br>选中段落可以引用提问。</p><div class="suggestions"><button data-prompt="请概括这份文档的核心问题、方法和结论，并引用页码。">概括这份文档 ↗</button><button data-prompt="请解释这份文档最重要的概念，并指出对应页码。">解释关键概念 ↗</button><button data-prompt="请梳理这份文档的论据与局限，并引用原文页码。">梳理论据与局限 ↗</button></div></div>';
+        root.innerHTML='<div class="empty"><div class="symbol">✦</div><h2>A little help with your reading</h2><p>Send the full PDF, including text and figures.<br>Select a passage to ask about it.</p><div class="suggestions"><button data-prompt="Summarize the main question, methods, and findings of this document. Cite page numbers.">Summarize this document ↗</button><button data-prompt="Explain the key concepts in this document and cite the relevant pages.">Explain key concepts ↗</button><button data-prompt="Review the evidence and limitations in this document. Cite the relevant pages.">Review evidence and limitations ↗</button></div></div>';
         root.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>bridge({type:'prompt',text:b.dataset.prompt}));
     } else {
         root.querySelector('.empty')?.remove();

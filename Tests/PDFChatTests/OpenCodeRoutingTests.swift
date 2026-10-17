@@ -39,8 +39,8 @@ final class OpenCodeRoutingTests: XCTestCase {
 
     func testMissingSessionErrorDoesNotSuggestPDFIncompatibility() {
         let error = ChatError.server(400, "Request is missing x-opencode-session and cannot be routed efficiently.")
-        XCTAssertTrue(error.localizedDescription.contains("会话路由"))
-        XCTAssertFalse(error.localizedDescription.contains("PDF 或工具不受支持"))
+        XCTAssertTrue(error.localizedDescription.contains("session routing"))
+        XCTAssertFalse(error.localizedDescription.contains("PDF or tools are unsupported"))
     }
 
     func testConnectionAndModelListSendStableOpenCodeRoutingHeaders() async throws {

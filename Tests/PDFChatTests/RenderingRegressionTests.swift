@@ -5,6 +5,36 @@ import AppKit
 
 final class RenderingRegressionTests: XCTestCase {
     @MainActor
+    func testMessageActionsAreHiddenOutsideBubbleAndKeepOriginalContent() async throws {
+        let (web, renderer, window, model) = try await readyWeb()
+        defer { web.configuration.userContentController.removeAllScriptMessageHandlers(); window.close() }
+        model.messages = [.init(role: "user", text: "Keep my original 中文 message.", images: [], streaming: false)]
+        model.revision += 1; renderer.requestUpdate()
+        try await Task.sleep(nanoseconds: 250_000_000)
+        let initial = try await web.evaluateJavaScript("""
+        (()=>{const m=document.querySelector('.message.user'),b=m.querySelector('.bubble'),c=m.querySelector('.copy');
+        return {header:m.querySelector('.role')===null,hidden:getComputedStyle(c).opacity==='0',
+        outside:!b.contains(c),below:c.getBoundingClientRect().top>=b.getBoundingClientRect().bottom,
+        text:m.querySelector('.content').textContent};})()
+        """) as! [String: Any]
+        XCTAssertEqual(initial["header"] as? Bool, true)
+        XCTAssertEqual(initial["hidden"] as? Bool, true)
+        XCTAssertEqual(initial["outside"] as? Bool, true)
+        XCTAssertEqual(initial["below"] as? Bool, true)
+        XCTAssertEqual(initial["text"] as? String, "Keep my original 中文 message.")
+
+    }
+
+    @MainActor
+    func testEnglishPresetMigrationPreservesCustomPromptsAndCollisions() {
+        let original = PresetPrompt(trigger: "总结", content: "请总结这段内容的核心要点，分条列出。")
+        let custom = PresetPrompt(trigger: "翻译", content: "Keep my edited prompt")
+        XCTAssertEqual(SlashCommandStore.migrateBuiltIns([original, custom]), [SlashCommandStore.defaults[0], custom])
+        let collision = PresetPrompt(trigger: "summarize", content: "My custom summary")
+        XCTAssertEqual(SlashCommandStore.migrateBuiltIns([original, collision]), [original, collision])
+    }
+
+    @MainActor
     func testDraftUndoDoesNotRegisterDocumentEdits() {
         _ = NSApplication.shared
         let window = DraftTestWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 140),

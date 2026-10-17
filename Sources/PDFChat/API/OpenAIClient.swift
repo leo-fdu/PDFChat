@@ -39,16 +39,16 @@ enum ChatError: LocalizedError {
             let hint: String
             switch code {
             case 400 where detail.lowercased().contains("x-opencode-session"):
-                hint = "OpenCode 缺少会话路由请求头（x-opencode-session）。请更新 PDFChat；若使用代理，请确认它保留该请求头。"
-            case 400: hint = "服务商拒绝了请求（HTTP 400），详情见下方。"
-            case 401, 403: hint = "鉴权失败，请检查当前连接的 API Key 与权限。"
-            case 404: hint = "接口或模型不存在，请检查地址、协议和模型名称。"
-            case 413: hint = "PDF 超过服务商的上传限制，可切换为文字模式。"
-            case 429: hint = "请求限流或额度不足，请稍后重试。"
-            default: hint = "服务商返回 HTTP \(code)。"
+                hint = "OpenCode is missing the session routing header (x-opencode-session). Update PDFChat. If using a proxy, make sure it preserves this header."
+            case 400: hint = "The provider rejected this request (HTTP 400). See details below."
+            case 401, 403: hint = "Authentication failed. Check the API key and permissions for this connection."
+            case 404: hint = "Endpoint or model not found. Check the base URL, protocol, and model ID."
+            case 413: hint = "The PDF exceeds the provider's upload limit. Try text mode."
+            case 429: hint = "Rate limit or quota exceeded. Try again later."
+            default: hint = "The provider returned HTTP \(code)."
             }
             return hint + (detail.isEmpty ? "" : "\n" + String(detail.prefix(1600)))
-        case .toolLimit: return "已达到本次 12 轮工具调用上限，可以继续提问。"
+        case .toolLimit: return "The 12-round tool limit has been reached. Send a follow-up question to continue."
         }
     }
 }
@@ -82,10 +82,10 @@ struct StreamRound {
         if payload == "[DONE]" { finished = true; return [] }
         guard let data = payload.data(using: .utf8),
               let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw ChatError.protocolError("服务商返回了无法识别的流式数据。")
+            throw ChatError.protocolError("The provider returned invalid streaming data.")
         }
         if let error = json["error"] as? [String: Any] {
-            throw ChatError.protocolError(error["message"] as? String ?? "服务商返回错误。")
+            throw ChatError.protocolError(error["message"] as? String ?? "The provider returned an error.")
         }
         var events: [ChatEvent] = []
         if style == .responses {
@@ -93,7 +93,7 @@ struct StreamRound {
             if type == "response.output_text.delta", let delta = json["delta"] as? String {
                 text += delta; events.append(.text(delta))
             } else if type == "response.web_search_call.in_progress" {
-                events.append(.activity("正在联网搜索"))
+                events.append(.activity("Searching the web"))
             } else if type == "response.output_item.done", let item = json["item"] as? [String: Any], item["type"] as? String == "function_call" {
                 let index = json["output_index"] as? Int ?? calls.count
                 calls[index] = ToolCall(id: item["call_id"] as? String ?? "", name: item["name"] as? String ?? "", arguments: item["arguments"] as? String ?? "{}")
@@ -111,7 +111,7 @@ struct StreamRound {
                         for annotation in part["annotations"] as? [[String: Any]] ?? [] {
                             if annotation["type"] as? String == "url_citation", let url = annotation["url"] as? String,
                                let parsed = URL(string: url), ["https", "http"].contains(parsed.scheme ?? "") {
-                                let title = (annotation["title"] as? String ?? parsed.host ?? "来源").replacingOccurrences(of: "]", with: "")
+                                let title = (annotation["title"] as? String ?? parsed.host ?? "Source").replacingOccurrences(of: "]", with: "")
                                 let link = "[\(title)](<\(url)>)"
                                 if !links.contains(link) { links.append(link) }
                             }
@@ -119,13 +119,13 @@ struct StreamRound {
                     }
                 }
                 if !links.isEmpty {
-                    let citations = "\n\n来源：\n" + links.map { "- " + $0 }.joined(separator: "\n")
+                    let citations = "\n\nSources:\n" + links.map { "- " + $0 }.joined(separator: "\n")
                     text += citations; events.append(.text(citations))
                 }
             } else if ["response.failed", "response.incomplete", "error"].contains(type) {
                 let response = json["response"] as? [String: Any] ?? json
                 let error = response["error"] as? [String: Any]
-                throw ChatError.protocolError(error?["message"] as? String ?? "响应未完成（可能达到输出上限），已保留收到的内容。")
+                throw ChatError.protocolError(error?["message"] as? String ?? "The response was incomplete, possibly due to an output limit. Received content has been kept.")
             }
         } else {
             if let choices = json["choices"] as? [[String: Any]], let choice = choices.first {
@@ -141,7 +141,7 @@ struct StreamRound {
                     calls[index] = call
                 }
                 if let reason = choice["finish_reason"] as? String {
-                    if reason == "length" || reason == "content_filter" { throw ChatError.protocolError("回答被服务商提前截断（\(reason)），已保留收到的内容。") }
+                    if reason == "length" || reason == "content_filter" { throw ChatError.protocolError("The provider ended the response early (\(reason)). Received content has been kept.") }
                     finished = true
                 }
             }
@@ -171,7 +171,7 @@ final class OpenAIClient {
         let base = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: base), let host = url.host, !host.isEmpty,
               ["http", "https"].contains(url.scheme ?? ""), url.query == nil, url.fragment == nil else {
-            throw ChatError.configuration("请输入有效的 API 根地址，例如 https://api.example.com/v1。")
+            throw ChatError.configuration("Enter a valid base URL, such as https://api.example.com/v1.")
         }
         return url.appendingPathComponent(path)
     }
@@ -221,7 +221,7 @@ final class OpenAIClient {
                     nativeWeb: Bool, execute: @escaping (ToolCall) async throws -> ToolOutput,
                     onEvent: @escaping (ChatEvent) async -> Void) async throws {
         let style = config.resolvedStyle
-        guard !config.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.configuration("请先选择模型。") }
+        guard !config.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.configuration("Choose a model first.") }
         var input = Self.initialInput(style: style, system: system, messages: messages, pdf: pdf)
         for _ in 0..<12 {
             try Task.checkCancellation()
@@ -239,7 +239,7 @@ final class OpenAIClient {
             if !declared.isEmpty { body["tools"] = declared }
             let req = try request(style == .responses ? "responses" : "chat/completions", body: body)
             let (bytes, response) = try await session.bytes(for: req)
-            guard let http = response as? HTTPURLResponse else { throw ChatError.protocolError("无效的 HTTP 响应。") }
+            guard let http = response as? HTTPURLResponse else { throw ChatError.protocolError("Invalid HTTP response.") }
             guard (200..<300).contains(http.statusCode) else {
                 var data = Data()
                 for try await byte in bytes { data.append(byte); if data.count >= 8192 { break } }
@@ -254,7 +254,7 @@ final class OpenAIClient {
                 if byte == 10 {
                     try Task.checkCancellation()
                     if lineBytes.last == 13 { lineBytes.removeLast() }
-                    guard let line = String(data: lineBytes, encoding: .utf8) else { throw ChatError.protocolError("无效的 UTF-8 流。") }
+                    guard let line = String(data: lineBytes, encoding: .utf8) else { throw ChatError.protocolError("Invalid UTF-8 stream.") }
                     lineBytes.removeAll(keepingCapacity: true)
                     if let payload = decoder.consume(line) {
                         for event in try round.accept(payload, style: style) { await onEvent(event) }
@@ -262,7 +262,7 @@ final class OpenAIClient {
                     }
                 } else {
                     lineBytes.append(byte)
-                    if lineBytes.count > 8_000_000 { throw ChatError.protocolError("流式事件超过大小限制。") }
+                    if lineBytes.count > 8_000_000 { throw ChatError.protocolError("The streaming event exceeds the size limit.") }
                 }
             }
             if !lineBytes.isEmpty, let line = String(data: lineBytes, encoding: .utf8), let payload = decoder.consume(line) {
@@ -272,13 +272,13 @@ final class OpenAIClient {
                 for event in try round.accept(payload, style: style) { await onEvent(event) }
             }
             try Task.checkCancellation()
-            guard round.finished else { throw ChatError.protocolError("连接在响应完成前中断，已保留收到的内容。") }
+            guard round.finished else { throw ChatError.protocolError("The connection was interrupted before completion. Received content has been kept.") }
             let calls = round.calls.sorted { $0.key < $1.key }.map(\.value)
             if calls.isEmpty {
-                guard !round.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.protocolError("模型返回了空回答，请检查模型与接口协议。") }
+                guard !round.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ChatError.protocolError("The model returned an empty response. Check the model and API protocol.") }
                 return
             }
-            guard calls.count <= 16 else { throw ChatError.protocolError("单轮工具调用过多。") }
+            guard calls.count <= 16 else { throw ChatError.protocolError("Too many tool calls in one round.") }
             if style == .responses {
                 input += round.responseOutput
             } else {
@@ -300,7 +300,7 @@ final class OpenAIClient {
                 }
             }
             if !round.text.isEmpty { await onEvent(.text("\n\n")) }
-            await onEvent(.activity("正在整理回答"))
+            await onEvent(.activity("Preparing response"))
         }
         throw ChatError.toolLimit
     }
@@ -320,7 +320,7 @@ final class OpenAIClient {
         try validate(response, data: data)
     }
     private func validate(_ response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse else { throw ChatError.protocolError("无效的响应。") }
+        guard let http = response as? HTTPURLResponse else { throw ChatError.protocolError("Invalid response.") }
         if !(200..<300).contains(http.statusCode) { throw ChatError.server(http.statusCode, Self.errorDetail(data)) }
     }
     static func errorDetail(_ data: Data) -> String {

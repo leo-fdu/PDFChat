@@ -31,8 +31,8 @@ struct PDFChatApp: App {
     }
     @CommandsBuilder private var commands: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("新对话") { chatVM?.newConversation() }.keyboardShortcut("n", modifiers: .command).disabled(chatVM == nil)
-            Button("打开 PDF…") { openPicker?() }.keyboardShortcut("o", modifiers: .command)
+            Button("New chat") { chatVM?.newConversation() }.keyboardShortcut("n", modifiers: .command).disabled(chatVM == nil)
+            Button("Open PDF…") { openPicker?() }.keyboardShortcut("o", modifiers: .command)
         }
     }
 }

@@ -37,11 +37,11 @@ struct ContentView: View {
         .onDisappear { chatViewModel.stop(); contextStore.recordPosition() }
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button { showOpenSheet = true } label: { Label("打开 PDF", systemImage: "folder") }.help("打开 PDF（⌘O）")
+                Button { showOpenSheet = true } label: { Label("Open PDF", systemImage: "folder") }.help("Open PDF (⌘O)")
             }
             ToolbarItem(placement: .primaryAction) {
-                Button { sidebarVisible.toggle() } label: { Label("阅读助手", systemImage: "sidebar.trailing") }
-                    .help("显示或隐藏阅读助手（⌘⇧L）").keyboardShortcut("l", modifiers: [.command, .shift])
+                Button { sidebarVisible.toggle() } label: { Label("Reading Assistant", systemImage: "sidebar.trailing") }
+                    .help("Show or hide assistant (⌘⇧L)").keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
         .fileImporter(isPresented: $showOpenSheet, allowedContentTypes: [.pdf]) { result in
@@ -58,10 +58,10 @@ struct ContentView: View {
             else {
                 VStack(spacing: 18) {
                     Image(systemName: "doc.text").font(.system(size: 58, weight: .ultraLight)).foregroundStyle(.tint)
-                    Text("留在阅读里").font(.system(size: 28, weight: .semibold))
-                    Text("打开 PDF，随时与阅读助手交流。") .foregroundStyle(.secondary)
-                    Button("打开 PDF…") { showOpenSheet = true }.buttonStyle(.borderedProminent).controlSize(.large)
-                    Text("也可以从 Finder 双击 PDF 打开").font(.caption).foregroundStyle(.tertiary)
+                    Text("Stay in the flow").font(.system(size: 28, weight: .semibold))
+                    Text("Open a PDF and explore it with your reading assistant.") .foregroundStyle(.secondary)
+                    Button("Open PDF…") { showOpenSheet = true }.buttonStyle(.borderedProminent).controlSize(.large)
+                    Text("You can also open a PDF from Finder").font(.caption).foregroundStyle(.tertiary)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -102,7 +102,7 @@ final class DragDivider: NSView {
     private var originalWidth: Double = 0
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityLabel("调整阅读助手宽度")
+        setAccessibilityElement(true); setAccessibilityLabel("Resize assistant sidebar")
         setAccessibilityRole(.splitter)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

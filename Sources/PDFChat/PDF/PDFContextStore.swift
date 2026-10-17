@@ -6,7 +6,7 @@ import CryptoKit
 enum DocumentInputMode: String, CaseIterable, Identifiable {
     case pdf, text
     var id: String { rawValue }
-    var label: String { self == .pdf ? "PDF 文件" : "PDFKit 文字" }
+    var label: String { self == .pdf ? "PDF File" : "PDFKit Text" }
 }
 struct DocumentQuote: Codable, Equatable {
     var text: String
@@ -28,14 +28,14 @@ actor PDFDocumentReader {
     init(url: URL?, data: Data?) { self.url = url; self.bytes = data }
     private func data() throws -> Data {
         if let bytes { return bytes }
-        guard let url else { throw ChatError.configuration("请先打开 PDF。") }
+        guard let url else { throw ChatError.configuration("Open a PDF first.") }
         let value = try Data(contentsOf: url, options: .mappedIfSafe)
         bytes = value
         return value
     }
     private func document() throws -> PDFDocument {
         if let parsed { return parsed }
-        guard let doc = PDFDocument(data: try data()), !doc.isLocked else { throw ChatError.configuration("PDF 无法读取或需要密码。") }
+        guard let doc = PDFDocument(data: try data()), !doc.isLocked else { throw ChatError.configuration("The PDF could not be read or requires a password.") }
         parsed = doc
         return doc
     }
@@ -45,7 +45,7 @@ actor PDFDocumentReader {
         if mode == .pdf {
             if let encoded { return .init(pdf: encoded, text: "") }
             let bytes = try data()
-            guard bytes.count < 50_000_000 else { throw ChatError.configuration("PDF 超过默认 50 MB 上传限制，请切换 PDFKit 文字模式。服务商可能还有更低限制。") }
+            guard bytes.count < 50_000_000 else { throw ChatError.configuration("The PDF exceeds the 50 MB upload limit. Switch to PDFKit Text. Your provider may have a lower limit.") }
             let input = PDFInput(filename: url?.lastPathComponent ?? "document.pdf", base64: bytes.base64EncodedString())
             encoded = input
             return .init(pdf: input, text: "")
@@ -54,10 +54,10 @@ actor PDFDocumentReader {
         var chunks: [String] = []
         for index in 0..<doc.pageCount {
             try Task.checkCancellation()
-            chunks.append("[第 \(index + 1) 页]\n" + (try pageText(index + 1)))
+            chunks.append("[Page \(index + 1)]\n" + (try pageText(index + 1)))
         }
         guard pageTexts.values.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            throw ChatError.configuration("此 PDF 没有可提取的文字。请使用 PDF 文件模式，或发送页面截图。")
+            throw ChatError.configuration("This PDF has no extractable text. Use PDF File mode or attach page images.")
         }
         return .init(pdf: nil, text: chunks.joined(separator: "\n\n"))
     }
@@ -65,14 +65,14 @@ actor PDFDocumentReader {
         if let cached = pageTexts[number] { return cached }
         let doc = try document()
         guard number >= 1, number <= doc.pageCount, let page = doc.page(at: number - 1) else {
-            throw ChatError.configuration("页码超出范围（1–\(doc.pageCount)）。")
+            throw ChatError.configuration("Page is out of range (1–\(doc.pageCount)).")
         }
         let text = page.string ?? ""
         pageTexts[number] = text
         return text
     }
     func search(_ query: String) throws -> String {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "请输入搜索词。" }
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "Enter a search query." }
         let doc = try document()
         var results: [String] = []
         for page in 1...max(doc.pageCount, 1) {
@@ -81,20 +81,20 @@ actor PDFDocumentReader {
             if let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
                 let start = text.index(range.lowerBound, offsetBy: -240, limitedBy: text.startIndex) ?? text.startIndex
                 let end = text.index(range.upperBound, offsetBy: 600, limitedBy: text.endIndex) ?? text.endIndex
-                results.append("[第 \(page) 页](pdfchat://page/\(page))\n" + text[start..<end])
+                results.append("[Page \(page)](pdfchat://page/\(page))\n" + text[start..<end])
                 if results.count == 20 { break }
             }
         }
-        return results.isEmpty ? "未找到匹配文字。扫描页可使用 view_pdf_page 查看。" : results.joined(separator: "\n\n")
+        return results.isEmpty ? "No matching text. Use view_pdf_page for scanned pages." : results.joined(separator: "\n\n")
     }
     func pageImage(_ number: Int) throws -> String {
         let doc = try document()
-        guard number >= 1, number <= doc.pageCount, let page = doc.page(at: number - 1) else { throw ChatError.configuration("页码超出范围。") }
+        guard number >= 1, number <= doc.pageCount, let page = doc.page(at: number - 1) else { throw ChatError.configuration("Page is out of range.") }
         let bounds = page.bounds(for: .cropBox)
         let ratio = 1600 / max(bounds.width, bounds.height, 1)
         let image = page.thumbnail(of: NSSize(width: bounds.width * ratio, height: bounds.height * ratio), for: .cropBox)
         guard let data = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: data),
-              let png = bitmap.representation(using: .png, properties: [:]) else { throw ChatError.configuration("页面图像生成失败。") }
+              let png = bitmap.representation(using: .png, properties: [:]) else { throw ChatError.configuration("Could not render the page image.") }
         return "data:image/png;base64," + png.base64EncodedString()
     }
 }
@@ -117,7 +117,7 @@ final class PDFContextStore: ObservableObject {
     weak var pdfView: PDFView?
     var onAsk: ((String) -> Void)?
     var pageCount: Int { document?.pageCount ?? 0 }
-    var filename: String { pdfURL?.lastPathComponent ?? "PDF 文档" }
+    var filename: String { pdfURL?.lastPathComponent ?? "PDF document" }
     var hasSelection: Bool { quote != nil }
     var contextLabel: String { mode.label }
     private var restoredPosition = false
@@ -182,7 +182,7 @@ final class PDFContextStore: ObservableObject {
     func addSearchResult(_ selection: PDFSelection) { results.append(selection) }
     func finishSearch() {
         isSearching = false
-        searchStatus = results.isEmpty ? "未找到" : "1 / \(results.count)"
+        searchStatus = results.isEmpty ? "No matches" : "1 / \(results.count)"
         if let first = results.first { pdfView?.setCurrentSelection(first, animate: false); pdfView?.go(to: first) }
     }
     func nextResult(_ offset: Int) {

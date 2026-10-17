@@ -60,15 +60,15 @@ struct TranscriptView: NSViewRepresentable {
             var updates: [[String: Any]] = []
             for message in model.messages {
                 var details: [String] = []
-                if let usage = message.usage { details.append("输入 \(usage.promptTokens.formatted()) · 输出 \(usage.completionTokens.formatted()) tokens") }
-                if let cost = message.costUSD { details.append(String(format: "估算 $%.4f（不含工具费用）", cost)) }
+                if let usage = message.usage { details.append("Input \(usage.promptTokens.formatted()) · Output \(usage.completionTokens.formatted()) tokens") }
+                if let cost = message.costUSD { details.append(String(format: "Estimated $%.4f (excluding tool fees)", cost)) }
                 if let activities = message.activities { details += activities }
                 let detail = details.joined(separator: "\n")
                 let stamp = message.text + "\u{0}" + (message.status ?? "") + detail + String(message.streaming)
                 if sent[message.id] == stamp { continue }
                 var item: [String: Any] = ["id": message.id.uuidString, "role": message.role, "text": message.text,
                                            "streaming": message.streaming, "status": message.status ?? "", "details": detail,
-                                           "model": message.model ?? "", "mode": message.inputMode == "text" ? "PDFKit 文字" : "PDF 文件"]
+                                           "model": message.model ?? "", "mode": message.inputMode == "text" ? "PDFKit Text" : "PDF File"]
                 if let quote = message.quote { item["quote"] = ["text": quote.text, "page": quote.page] }
                 if sent[message.id] == nil { item["images"] = message.images.map(\.dataURL) }
                 updates.append(item); sent[message.id] = stamp

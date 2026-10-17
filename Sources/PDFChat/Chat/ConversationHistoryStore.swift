@@ -183,7 +183,7 @@ final class ConversationHistoryStore: ObservableObject {
                 let data = try JSONEncoder().encode(snapshot)
                 try data.write(to: file, options: .atomic)
             } catch {
-                let message = "对话保存失败：" + error.localizedDescription
+                let message = "Could not save conversation: " + error.localizedDescription
                 Task { @MainActor [weak self] in self?.persistenceError = message }
             }
         }
@@ -193,7 +193,7 @@ final class ConversationHistoryStore: ObservableObject {
         let t = (messages.first { $0.role == "user" }?.text ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !t.isEmpty { return String(t.prefix(24)) }
-        return "图片对话"
+        return "Image conversation"
     }
 
     private static func thumbData(fromDataURL url: String) -> Data? {
