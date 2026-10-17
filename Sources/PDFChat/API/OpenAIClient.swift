@@ -38,11 +38,14 @@ enum ChatError: LocalizedError {
         case .server(let code, let detail):
             let hint: String
             switch code {
+            case 400 where detail.lowercased().contains("x-opencode-session"):
+                hint = "OpenCode 缺少会话路由请求头（x-opencode-session）。请更新 PDFChat；若使用代理，请确认它保留该请求头。"
+            case 400: hint = "服务商拒绝了请求（HTTP 400），详情见下方。"
             case 401, 403: hint = "鉴权失败，请检查当前连接的 API Key 与权限。"
             case 404: hint = "接口或模型不存在，请检查地址、协议和模型名称。"
             case 413: hint = "PDF 超过服务商的上传限制，可切换为文字模式。"
             case 429: hint = "请求限流或额度不足，请稍后重试。"
-            default: hint = "服务商返回 HTTP \(code)。PDF 或工具不受支持时，请检查连接能力设置。"
+            default: hint = "服务商返回 HTTP \(code)。"
             }
             return hint + (detail.isEmpty ? "" : "\n" + String(detail.prefix(1600)))
         case .toolLimit: return "已达到本次 12 轮工具调用上限，可以继续提问。"
@@ -157,8 +160,11 @@ final class OpenAIClient {
     let config: APIConfig
     let apiKey: String
     let session: URLSession
-    init(config: APIConfig, apiKey: String, session: URLSession = .shared) {
+    let conversationSessionID: String
+    init(config: APIConfig, apiKey: String, session: URLSession = .shared,
+         conversationSessionID: String = UUID().uuidString) {
         self.config = config; self.apiKey = apiKey; self.session = session
+        self.conversationSessionID = conversationSessionID
     }
 
     func endpoint(_ path: String) throws -> URL {
@@ -169,9 +175,14 @@ final class OpenAIClient {
         }
         return url.appendingPathComponent(path)
     }
-    private func request(_ path: String, body: [String: Any]? = nil) throws -> URLRequest {
+    func request(_ path: String, body: [String: Any]? = nil) throws -> URLRequest {
         var request = URLRequest(url: try endpoint(path))
         request.timeoutInterval = 180
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        request.setValue("PDFChat/" + version, forHTTPHeaderField: "User-Agent")
+        if let host = request.url?.host?.lowercased(), host == "opencode.ai" || host.hasSuffix(".opencode.ai") {
+            request.setValue(conversationSessionID, forHTTPHeaderField: "x-opencode-session")
+        }
         if !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let body {

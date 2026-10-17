@@ -27,6 +27,8 @@ An “OpenAI-compatible” URL does **not** guarantee PDF, vision, reasoning, or
 
 Use **获取模型列表** to query `/models`, or enter a model ID manually. **测试连接** sends a small text request to the selected model (provider usage may be charged); it verifies basic connectivity, not every optional capability. Local endpoints can use an empty API key. Leave reasoning at 默认 unless the model supports the selected effort value. Turn off streamed usage if a compatible provider rejects `stream_options`.
 
+For official `opencode.ai` endpoints, PDFChat automatically sends a stable `x-opencode-session` per conversation and identifies itself as `PDFChat/<version>`. The session survives follow-up questions, retries, tool rounds, and history restoration; new conversations use a different ID. Connection tests and model-list requests also carry routing headers. This addresses OpenCode's missing-session HTTP 400 without changing PDF/text mode. [OpenCode Go's client requirements](https://opencode.ai/docs/go/#where-can-i-use-it) target coding-agent traffic; routing-header support does not establish that Go supports general PDF reading, a particular model's file inputs, or every optional capability.
+
 ## Reading tools
 
 Document tools are enabled by default. Network access is opt-in using the sidebar's 阅读工具 menu or Settings → 工具.

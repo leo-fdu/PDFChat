@@ -41,12 +41,17 @@ final class ChatViewModel: ObservableObject {
     private var runID: UUID?
     private var pendingText = ""
     private var activeAssistant: UUID?
+    private var emptySessionID = UUID()
+    // The first user message is persisted and retained on retries, so its ID also
+    // identifies a routing session across app restarts without a history migration.
+    var routingSessionID: String { (messages.first(where: { $0.role == "user" })?.id ?? emptySessionID).uuidString }
     var currentModel: String { settings.config.model }
     var sessionTotalTokens: Int { sessionPromptTokens + sessionCompletionTokens }
 
     func newConversation() {
         stop()
         history?.beginNewConversation()
+        emptySessionID = UUID()
         messages = []; inputText = ""; pendingImages = []; error = nil; activity = ""
         sessionPromptTokens = 0; sessionCompletionTokens = 0; sessionCost = 0
         revision += 1
@@ -80,6 +85,7 @@ final class ChatViewModel: ObservableObject {
         start(reader: contextStore.reader, mode: DocumentInputMode(rawValue: messages[user].inputMode ?? "pdf") ?? .pdf)
     }
     private func start(reader: PDFDocumentReader?, mode: DocumentInputMode) {
+        let conversationSessionID = routingSessionID
         let id = UUID()
         runID = id
         pendingText = ""
@@ -115,7 +121,7 @@ final class ChatViewModel: ObservableObject {
                 }
                 self.activity = "等待模型响应"
                 let system = Self.systemPrompt + (document?.text.isEmpty == false ? "\n\n以下是 PDFKit 提取的完整文字：\n" + document!.text : "")
-                let client = OpenAIClient(config: config, apiKey: key)
+                let client = OpenAIClient(config: config, apiKey: key, conversationSessionID: conversationSessionID)
                 try await client.streamChat(system: system, messages: history, pdf: document?.pdf, tools: tools,
                                             nativeWeb: web && config.resolvedStyle == .responses,
                                             execute: { call in
